@@ -149,3 +149,27 @@ Mở trình duyệt truy cập: `http://localhost:8080`.
 python tests/test_virtual_engine.py
 python tests/test_settings.py
 ```
+
+---
+
+## 🔮 Lộ Trình Phát Triển: Version 2 (Full PTZ & Hierarchical Scale-Space)
+
+### 1. Mở Rộng Hệ Trục Toạ Độ 3 Chiều $(Pan, Tilt, Zoom)$
+- **Hệ trục:** $Pan \in [-1.0, 1.0]$, $Tilt \in [-1.0, 1.0]$, $Zoom \in [0.0, 1.0]$.
+- **Không gian Mặt Cầu Đa Tầng Phân Giải (Hierarchical Spherical Scale-Space):**
+  - $Z = 0.0$ (Wide Base): Ảnh toàn cảnh 360° bao quát, góc nhìn lớn ($HFOV \approx 85^\circ$).
+  - $Z \in (0.0, 1.0]$ (Tele Scale): Zoom quang học/kỹ thuật số chi tiết ($HFOV \approx 10^\circ \rightarrow 15^\circ$).
+- **Công thức biến thiên tiêu cự và trường nhìn:**
+  $$HFOV(Z) = 2 \cdot \arctan\left(\frac{\tan(HFOV_{wide} / 2)}{1 + Z \cdot (M_{max} - 1)}\right), \quad f(Z) = f_{wide} \cdot (1 + Z \cdot (M_{max} - 1))$$
+
+### 2. Mô Hình Ma Trận Biến Đổi Tuyến Tính Đa Tầng (Homography Transform)
+Vì camera PTZ quay và zoom tại tâm quang học cố định ($\mathbf{t} = \mathbf{0}$, không có sai lệch thị sai Parallax), quan hệ giữa ảnh góc rộng và ảnh zoom cận cảnh được tính hoàn toàn bằng ma trận đại số tuyến tính $3 \times 3$:
+
+$$\mathbf{H}_{wide \to zoom} = \mathbf{K}_{zoom} \cdot \mathbf{R}_{zoom}^{-1} \cdot \mathbf{R}_{wide} \cdot \mathbf{K}_{wide}^{-1}$$
+
+$$\begin{bmatrix} u_{zoom} \\ v_{zoom} \\ 1 \end{bmatrix} \sim \mathbf{H}_{wide \to zoom} \begin{bmatrix} u_{wide} \\ v_{wide} \\ 1 \end{bmatrix}$$
+
+- **Ứng dụng:**
+  - **Slew-to-Cue 2 Chiều:** Phát hiện đối tượng/người khả nghi trên bản đồ Panorama toàn cảnh $\rightarrow$ Tính vector ma trận $\rightarrow$ Quay camera và Zoom cận cảnh $Z$ vào mục tiêu với độ nét cao.
+  - **Auto Re-mapping:** Chiếu ngược các Bounding Box nhận diện từ tầng Zoom sắc nét về toạ độ neo của bản đồ toàn cảnh gốc.
+
