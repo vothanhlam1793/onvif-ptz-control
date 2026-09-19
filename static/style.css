@@ -939,6 +939,50 @@ input[type="range"] {
   accent-color: var(--accent);
 }
 
+/* ── RTSP Badge ── */
+.rtsp-badge-container {
+  display: flex;
+  align-items: center;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 4px 8px;
+  border-radius: 6px;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.rtsp-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #38bdf8;
+  letter-spacing: 0.5px;
+}
+
+#live-rtsp-url {
+  font-size: 11px;
+  color: #94a3b8;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-copy-rtsp {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.btn-copy-rtsp:hover {
+  background: #334155;
+  color: #ffffff;
+}
+
 /* ── Settings View ── */
 .settings-layout {
   display: grid;

@@ -569,11 +569,51 @@ async function loadSettings() {
   if (document.getElementById("cfg-llm-url")) document.getElementById("cfg-llm-url").value = data.ninerouter_base_url || "";
   if (document.getElementById("cfg-llm-key")) document.getElementById("cfg-llm-key").value = data.ninerouter_api_key_masked || "";
   if (document.getElementById("cfg-llm-model")) document.getElementById("cfg-llm-model").value = data.vlm_model || "ag/gemini-3.7-flash-high";
+  if (document.getElementById("cfg-current-rtsp")) document.getElementById("cfg-current-rtsp").value = data.rtsp_url || "";
+
+  // Cập nhật Live View RTSP Link
+  const liveRtsp = document.getElementById("live-rtsp-url");
+  if (liveRtsp) {
+    liveRtsp.textContent = data.rtsp_url || "Chưa có luồng RTSP";
+    liveRtsp.title = data.rtsp_url || "";
+  }
 
   // Cập nhật sidebar host
   const hostDisp = document.getElementById("cam-host-display");
   if (hostDisp) hostDisp.textContent = data.camera_host;
 }
+
+// Copy RTSP Clipboard Helper
+function setupCopyButton(btnId, targetId, isInput = false) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    let text = "";
+    if (isInput) {
+      const el = document.getElementById(targetId);
+      text = el ? el.value : "";
+    } else {
+      const el = document.getElementById(targetId);
+      text = el ? el.textContent : "";
+    }
+    if (text && text !== "Đang lấy link RTSP..." && text !== "Chưa có luồng RTSP") {
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = "✓ Đã copy!";
+        btn.style.background = "#10b981";
+        btn.style.color = "#ffffff";
+        setTimeout(() => {
+          btn.textContent = orig;
+          btn.style.background = "";
+          btn.style.color = "";
+        }, 2000);
+      });
+    }
+  });
+}
+
+setupCopyButton("btn-copy-live-rtsp", "live-rtsp-url", false);
+setupCopyButton("btn-copy-settings-rtsp", "cfg-current-rtsp", true);
 
 // 1. Sync & Test Camera
 const btnSyncCam = document.getElementById("btn-sync-camera");

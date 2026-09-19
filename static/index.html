@@ -78,9 +78,16 @@
         
         <!-- Video Stream Stage -->
         <div class="video-stage-container panel">
-          <div class="panel-head">
-            <strong>Khung hình trực tiếp (RTSP Stream)</strong>
-            <span>Nhấn vào hình để tự động căn tâm (Click-to-Center)</span>
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px;">
+            <div>
+              <strong>Khung hình trực tiếp</strong>
+              <span>Nhấn vào hình để tự động căn tâm (Click-to-Center)</span>
+            </div>
+            <div class="rtsp-badge-container">
+              <span class="rtsp-label">RTSP:</span>
+              <code id="live-rtsp-url">Đang lấy link RTSP...</code>
+              <button class="btn-copy-rtsp" id="btn-copy-live-rtsp" title="Sao chép link RTSP">📋 Copy</button>
+            </div>
           </div>
 
           <div class="video-stage" id="video-wrapper">
@@ -349,6 +356,15 @@
               <div class="form-group">
                 <label for="cfg-stream-h">Độ cao Stream (Height):</label>
                 <input type="number" id="cfg-stream-h" placeholder="720" value="720">
+              </div>
+            </div>
+
+            <!-- Current Active RTSP URI -->
+            <div class="form-group" style="margin-top:14px;">
+              <label>RTSP Stream URI Hiện Tại (Đang phát):</label>
+              <div style="display:flex;gap:8px;">
+                <input type="text" id="cfg-current-rtsp" readonly style="flex:1;background:#f1f5f9;color:#475569;font-family:monospace;font-size:12px;">
+                <button class="secondary-btn" id="btn-copy-settings-rtsp" type="button" style="padding:0 12px;">📋 Copy</button>
               </div>
             </div>
 

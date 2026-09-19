@@ -594,6 +594,7 @@ def get_system_settings():
         "ninerouter_api_key_masked": masked_key,
         "vlm_model": vlm_model,
         "device_info": device_info,
+        "rtsp_url": rtsp_url_main,
     }
 
 
