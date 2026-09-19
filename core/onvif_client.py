@@ -9,6 +9,7 @@ import os
 import datetime
 import re
 import xml.etree.ElementTree as ET
+import urllib.parse
 from typing import Optional
 
 import requests
@@ -371,8 +372,13 @@ class OnvifClient:
 </GetStreamUri>"""
         root = self._post(self.media_url, body)
         uri = root.findtext(".//tt:Uri", "", NS)
-        # Inject credentials vào URI
+        # Inject credentials vào URI (URL encode password để tránh lỗi ký tự đặc biệt @, #, !)
         if uri and "://" in uri:
             scheme, rest = uri.split("://", 1)
-            uri = f"{scheme}://{self.username}:{self.password}@{rest}"
+            # Tách nếu đã có user:pass cũ trong rest
+            if "@" in rest:
+                rest = rest.split("@", 1)[1]
+            safe_user = urllib.parse.quote(self.username, safe="")
+            safe_pass = urllib.parse.quote(self.password, safe="")
+            uri = f"{scheme}://{safe_user}:{safe_pass}@{rest}"
         return uri
