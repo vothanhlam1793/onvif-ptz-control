@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StationWatch · Điều khiển Camera PTZ & Toàn Cảnh AI</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="shell">
+  <!-- ── Sidebar Nav (StationWatch Style) ── -->
+  <aside class="sidebar">
+    <a href="#" class="brand">
+      <div class="brandmark">S</div>
+      <div class="brand-text">
+        <strong>StationWatch</strong>
+        <small>PTZ & AI Panorama</small>
+      </div>
+    </a>
+
+    <div class="site-card">
+      <div class="site-icon">&#128249;</div>
+      <div>
+        <strong id="cam-host-display">192.168.110.14</strong>
+        <small id="cam-profile-display">ONVIF Profile000</small>
+      </div>
+    </div>
+
+    <div class="nav-label">Chức năng</div>
+    <nav>
+      <button class="nav-btn active" data-tab="live">
+        <span class="nav-icon">&#9658;</span> Giám sát trực tiếp
+      </button>
+      <button class="nav-btn" data-tab="panorama">
+        <span class="nav-icon">&#9638;</span> Xưởng Panorama AI
+      </button>
+      <button class="nav-btn" data-tab="patrol">
+        <span class="nav-icon">&#8635;</span> Tuần tra & Điểm nhớ
+      </button>
+    </nav>
+
+    <div class="aside-bottom">
+      <div class="ws-status-indicator">
+        <div class="ws-dot" id="ws-dot"></div>
+        <span id="ws-status-text">Đang kết nối Telemetry...</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main Content Area ── -->
+  <main>
+    <!-- Header -->
+    <header class="page-header">
+      <div>
+        <div class="breadcrumb" id="page-breadcrumb">GIÁM SÁT · CAMERA PTZ</div>
+        <h1 id="page-title">Trực tiếp & Điều khiển PTZ</h1>
+      </div>
+      <div class="header-badges">
+        <div class="badge good" id="badge-status">
+          <span>●</span> <span id="badge-status-text">PTZ Sẵn sàng</span>
+        </div>
+        <div class="badge" id="badge-fps">MJPEG 30 FPS</div>
+      </div>
+    </header>
+
+    <!-- ──────────────────────────────────────────────
+         Tab 1: Live Monitor & Control Dock
+         ────────────────────────────────────────────── -->
+    <div class="view-section active" id="tab-live">
+      <div class="live-layout">
+        
+        <!-- Video Stream Stage -->
+        <div class="video-stage-container panel">
+          <div class="panel-head">
+            <strong>Khung hình trực tiếp (RTSP Stream)</strong>
+            <span>Nhấn vào hình để tự động căn tâm (Click-to-Center)</span>
+          </div>
+
+          <div class="video-stage" id="video-wrapper">
+            <img id="stream-img" src="/stream" alt="Live Stream">
+            <!-- HUD Overlay -->
+            <div class="video-hud">
+              <div class="hud-tl">
+                <span>P: <b id="hud-pan">0.000</b></span>
+                <span>T: <b id="hud-tilt">0.000</b></span>
+                <span>Z: <b id="hud-zoom">0.0</b></span>
+              </div>
+              <div class="hud-tr">
+                <div class="rec-dot"></div>
+                <span>LIVE</span>
+              </div>
+              <div class="hud-reticle"></div>
+            </div>
+          </div>
+
+            <div class="video-controls">
+            <div class="video-hint">
+              <span>Phím tắt:</span>
+              <span class="kbd-badge">W</span><span class="kbd-badge">A</span><span class="kbd-badge">S</span><span class="kbd-badge">D</span> Pan/Tilt
+              <span class="kbd-badge">Space</span> Dừng
+              <span class="kbd-badge">+</span><span class="kbd-badge">-</span> Zoom
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="secondary-btn" id="btn-virtual-home" title="Chuẩn hoá toạ độ ảo (Homing)">⌂ Calibrate Homing</button>
+              <button class="secondary-btn" id="btn-snapshot-instant" title="Chụp ảnh JPEG chất lượng cao">📸 Chụp nhanh</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: PTZ Control Dock -->
+        <div class="control-dock">
+          <!-- D-pad Card -->
+          <div class="panel control-card">
+            <h3>Bàn điều hướng PTZ</h3>
+            
+            <div class="dpad-container">
+              <div class="dpad-grid">
+                <button class="dpad-key" data-dir="up-left" title="Tây Bắc">&#8598;</button>
+                <button class="dpad-key" data-dir="up" title="Lên (W)">&#8593;</button>
+                <button class="dpad-key" data-dir="up-right" title="Đông Bắc">&#8599;</button>
+                <button class="dpad-key" data-dir="left" title="Trái (A)">&#8592;</button>
+                <button class="dpad-key stop-key" id="dpad-stop" title="Dừng (Space)">STOP</button>
+                <button class="dpad-key" data-dir="right" title="Phải (D)">&#8594;</button>
+                <button class="dpad-key" data-dir="down-left" title="Tây Nam">&#8601;</button>
+                <button class="dpad-key" data-dir="down" title="Xuống (S)">&#8595;</button>
+                <button class="dpad-key" data-dir="down-right" title="Đông Nam">&#8600;</button>
+              </div>
+
+              <div class="zoom-stack">
+                <button class="zoom-key" data-dir="zoom-in" title="Phóng to (+)">+</button>
+                <button class="zoom-key" data-dir="zoom-out" title="Thu nhỏ (-)">−</button>
+              </div>
+            </div>
+
+            <!-- Speed Slider -->
+            <div class="speed-box">
+              <div class="speed-header">
+                <span>Tốc độ di chuyển:</span>
+                <strong id="speed-display">0.40</strong>
+              </div>
+              <input type="range" id="speed-range" min="0.05" max="1.0" step="0.05" value="0.40">
+            </div>
+          </div>
+
+          <!-- Quick Presets Card -->
+          <div class="panel control-card">
+            <h3>
+              <span>Điểm nhớ nhanh</span>
+              <button class="secondary-btn" id="btn-refresh-presets" style="padding:4px 8px;font-size:11px;">&#8635; Làm mới</button>
+            </h3>
+
+            <div class="preset-list-wrap" id="dock-preset-list">
+              <span style="font-size:13px;color:#8fa3bb;">Đang tải danh sách...</span>
+            </div>
+
+            <div class="preset-form">
+              <input type="text" id="input-preset-name" placeholder="Tên vị trí...">
+              <button class="primary-btn" id="btn-save-preset">Lưu</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────────────────────
+         Tab 2: Panorama Studio (Gemini 3.7 AI)
+         ────────────────────────────────────────────── -->
+    <div class="view-section" id="tab-panorama">
+      <div class="pano-workspace">
+        
+        <div class="pano-hero">
+          <div class="pano-hero-desc">
+            <h2>Chụp & Ghép Panorama Đa Chiều (Multi-Row 2D Grid)</h2>
+            <p>Hệ thống tự động khử méo quang học, uốn chiếu mặt cầu Spherical, và quét lưới 2 tầng (Dưới chân trời + Trần nhà) để thu trọn 360° x 85° không gian căn phòng mà không bị gãy khúc vật thể gần.</p>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <select id="select-pano-mode" style="padding:10px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-size:13px;font-weight:600;color:#1e293b;">
+              <option value="full_space" selected>🌐 Toàn không gian 2 tầng (16 frames - Phủ trần/sàn)</option>
+              <option value="horizon">↔ Chân trời 360° 1 tầng (8 frames - Nhanh)</option>
+            </select>
+            <button class="cyan-btn" id="btn-start-panorama" style="padding:14px 24px;font-size:14px;white-space:nowrap;">
+              &#9654; Bắt đầu quét
+            </button>
+          </div>
+        </div>
+
+        <!-- 3 Step Wizard Bar -->
+        <div class="pano-stepper">
+          <div class="step-card" id="step-1">
+            <div class="step-num">1</div>
+            <div class="step-text">
+              <strong>Đo đạc AI (Calibrate)</strong>
+              <small id="pano-step1-desc">Gemini 3.7 ước tính FOV & số góc quét</small>
+            </div>
+          </div>
+          <div class="step-card" id="step-2">
+            <div class="step-num">2</div>
+            <div class="step-text">
+              <strong>Quét & Chụp (Sweep)</strong>
+              <small>Quay chính xác theo toạ độ & ghi frame</small>
+            </div>
+          </div>
+          <div class="step-card" id="step-3">
+            <div class="step-num">3</div>
+            <div class="step-text">
+              <strong>Ghép Toàn Cảnh (Stitch)</strong>
+              <small>OpenCV căn chỉnh ma trận và hoà trộn ảnh</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Camera Profile Badge -->
+        <div class="panel" style="margin-top:16px;padding:12px 18px;display:flex;align-items:center;justify-content:space-between;background:#f8fafc;">
+          <div>
+            <span style="font-size:12px;color:#64748b;text-transform:uppercase;font-weight:600;">Hồ sơ thiết bị ONVIF:</span>
+            <strong id="prof-device-title" style="margin-left:8px;color:#0f172a;font-size:13px;">Đang kiểm tra...</strong>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <span class="badge good" id="prof-badge-status">Profile Ready</span>
+            <button class="secondary-btn" id="btn-recalibrate" style="padding:4px 10px;font-size:11px;">⚙ Hiệu chuẩn lại 3 bước</button>
+          </div>
+        </div>
+
+        <!-- Progress Track -->
+        <div class="pano-progress-container" id="pano-progress-box">
+          <div class="pano-progress-meta">
+            <span id="pano-status-msg">Trạng thái: Sẵn sàng</span>
+            <span id="pano-pct-msg">0%</span>
+          </div>
+          <div class="pano-track">
+            <div class="pano-fill" id="pano-progress-bar"></div>
+          </div>
+          <div class="pano-notes" id="pano-notes-text"></div>
+        </div>
+
+        <!-- Results Grid -->
+        <div class="pano-results-grid">
+          <!-- Final Stitched Image -->
+          <div class="pano-preview-card">
+            <div class="panel-head">
+              <strong>Ảnh Panorama Toàn Cảnh (Đã ghép)</strong>
+              <a href="#" class="secondary-btn" id="btn-download-pano" download="panorama.jpg" style="padding:4px 8px;font-size:12px;text-decoration:none;">Tải về</a>
+            </div>
+            <div class="pano-img-stage">
+              <img id="img-result-pano" src="" alt="Panorama Result" style="display:none;">
+              <div class="pano-empty-hint" id="hint-empty-pano">Chưa có kết quả panorama. Nhấn "Bắt đầu chụp" ở trên để khởi chạy.</div>
+            </div>
+          </div>
+
+          <!-- Multi-angle Grid -->
+          <div class="pano-preview-card">
+            <div class="panel-head">
+              <strong>Lưới các góc chụp (Grid View)</strong>
+              <span id="pano-frames-count">0 frames</span>
+            </div>
+            <div class="pano-img-stage">
+              <img id="img-result-grid" src="" alt="Grid Result" style="display:none;">
+              <div class="pano-empty-hint" id="hint-empty-grid">Chưa có ảnh góc chụp.</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────────────────────
+         Tab 3: Patrol & Presets Hub
+         ────────────────────────────────────────────── -->
+    <div class="view-section" id="tab-patrol">
+      <div class="patrol-layout">
+        
+        <!-- Patrol Config -->
+        <div class="patrol-config-card">
+          <h2 style="font-size:18px;margin-bottom:8px;">Cấu hình Tuần tra Tự động</h2>
+          <p style="color:var(--text-muted);font-size:13px;margin-bottom:18px;">Chọn danh sách điểm nhớ và đặt thời gian dừng lại tại mỗi góc để camera tự động đảo góc liên tục.</p>
+
+          <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:#334d69;">1. Chọn các điểm nhớ tuần tra:</label>
+          <div class="patrol-presets-select" id="patrol-checkbox-list">
+            <span style="font-size:13px;color:#8fa3bb;padding:8px;">Đang tải danh sách điểm nhớ...</span>
+          </div>
+
+          <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:#334d69;">2. Thời gian dừng mỗi điểm (giây):</label>
+          <input type="number" id="patrol-dwell-input" min="1" max="60" value="3" style="width:100%;border:1px solid #cdd8e3;border-radius:6px;padding:8px 12px;margin-bottom:18px;">
+
+          <div style="display:flex;gap:10px;">
+            <button class="primary-btn" id="btn-start-patrol" style="flex:1;">▶ Bắt đầu tuần tra</button>
+            <button class="secondary-btn" id="btn-stop-patrol" style="flex:1;" disabled>■ Dừng lại</button>
+          </div>
+        </div>
+
+        <!-- Preset Manager List -->
+        <div class="panel">
+          <div class="panel-head">
+            <strong>Danh sách điểm nhớ (PTZ Presets)</strong>
+            <span>Nhấn "Đến" để quay ngay lập tức</span>
+          </div>
+          <div style="padding:16px;" id="full-preset-manager">
+            <div style="display:grid;gap:10px;" id="preset-manager-items">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
