@@ -3,9 +3,12 @@ FastAPI routes: PTZ control, stream, snapshot, presets, AI aim endpoint, panoram
 """
 
 import io
+import os
+import time
 import json
 import asyncio
 import threading
+from pathlib import Path
 from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -524,10 +527,180 @@ def panorama_result_panorama():
     return Response(content=result["panorama"], media_type="image/jpeg")
 
 
-@router.get("/panorama/result/grid")
-def panorama_result_grid():
-    """Trả về ảnh grid (các frame riêng lẻ) sau khi xong."""
-    result = _panorama_state.get("result")
-    if not result or not result.get("grid"):
-        raise HTTPException(404, "Grid not ready")
-    return Response(content=result["grid"], media_type="image/jpeg")
+# ──────────────────────────────────────────────
+# Settings & Configuration Endpoints
+# ──────────────────────────────────────────────
+
+class CameraTestSyncRequest(BaseModel):
+    host: str
+    port: int = 80
+    username: str
+    password: str
+
+
+class LLMTestRequest(BaseModel):
+    base_url: str
+    api_key: str
+    model: str
+
+
+class SettingsUpdateRequest(BaseModel):
+    camera_host: str
+    camera_port: int = 80
+    camera_user: str
+    camera_pass: Optional[str] = None
+    stream_width: int = 1280
+    stream_height: int = 720
+    ninerouter_base_url: str
+    ninerouter_api_key: Optional[str] = None
+    vlm_model: str
+
+
+@router.get("/settings")
+def get_system_settings():
+    """Lấy thông tin cấu hình hiện tại (ẩn password/api_key)."""
+    camera_host = os.getenv("CAMERA_HOST", "192.168.110.14")
+    camera_port = int(os.getenv("CAMERA_PORT", "80"))
+    camera_user = os.getenv("CAMERA_USER", "admin")
+    camera_pass = os.getenv("CAMERA_PASS", "")
+    stream_width = int(os.getenv("STREAM_WIDTH", "1280"))
+    stream_height = int(os.getenv("STREAM_HEIGHT", "720"))
+    ninerouter_base_url = os.getenv("NINEROUTER_BASE_URL", "https://9router.camerangochoang.com/v1")
+    ninerouter_api_key = os.getenv("NINEROUTER_API_KEY", "")
+    vlm_model = os.getenv("VLM_MODEL", "ag/gemini-3.7-flash-high")
+
+    # Mask key & pass
+    masked_key = (ninerouter_api_key[:6] + "..." + ninerouter_api_key[-4:]) if len(ninerouter_api_key) > 10 else "********"
+    masked_pass = "********" if camera_pass else ""
+
+    device_info = {}
+    if onvif_client:
+        device_info = {
+            "manufacturer": onvif_client.manufacturer or "LC",
+            "model": onvif_client.model or "IPC-K2E-3H3W",
+            "firmware_version": onvif_client.firmware_version,
+            "serial_number": onvif_client.serial_number,
+            "camera_key": onvif_client.camera_key,
+        }
+
+    return {
+        "camera_host": camera_host,
+        "camera_port": camera_port,
+        "camera_user": camera_user,
+        "camera_pass_masked": masked_pass,
+        "stream_width": stream_width,
+        "stream_height": stream_height,
+        "ninerouter_base_url": ninerouter_base_url,
+        "ninerouter_api_key_masked": masked_key,
+        "vlm_model": vlm_model,
+        "device_info": device_info,
+    }
+
+
+@router.post("/camera/test_sync")
+def camera_test_sync(req: CameraTestSyncRequest):
+    """Bắt tay ONVIF thử nghiệm, đọc thông tin phần cứng & kiểm tra luồng RTSP."""
+    from core.onvif_client import OnvifClient
+    t0 = time.time()
+    try:
+        client = OnvifClient(req.host, req.port, req.username, req.password)
+        info = client.discover()
+        rtsp_uri = client.get_stream_uri()
+        elapsed = round((time.time() - t0) * 1000, 1)
+        return {
+            "ok": True,
+            "latency_ms": elapsed,
+            "profile_token": info.get("profile_token"),
+            "ptz_node_token": info.get("ptz_node_token"),
+            "manufacturer": client.manufacturer,
+            "model": client.model,
+            "firmware": client.firmware_version,
+            "serial_number": client.serial_number,
+            "mac_address": client.mac_address,
+            "rtsp_url": rtsp_uri,
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": str(e),
+            "latency_ms": round((time.time() - t0) * 1000, 1)
+        }
+
+
+@router.post("/settings/test_llm")
+def settings_test_llm(req: LLMTestRequest):
+    """Gửi prompt kiểm tra tới LLM / 9Router."""
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import HumanMessage
+    t0 = time.time()
+    try:
+        api_key = req.api_key
+        # Nếu truyền masked key thì fallback lấy từ .env
+        if api_key.startswith("sk-") and "..." in api_key:
+            api_key = os.getenv("NINEROUTER_API_KEY", "")
+
+        llm = ChatOpenAI(
+            base_url=req.base_url,
+            api_key=api_key,
+            model=req.model,
+            temperature=0.0,
+            max_tokens=30,
+            timeout=10.0,
+        )
+        resp = llm.invoke([HumanMessage(content="Reply with exactly 'OK_CONNECTED'")])
+        elapsed = round((time.time() - t0) * 1000, 1)
+        return {
+            "ok": True,
+            "latency_ms": elapsed,
+            "reply": resp.content.strip(),
+            "model": req.model,
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": str(e),
+            "latency_ms": round((time.time() - t0) * 1000, 1)
+        }
+
+
+@router.post("/settings/save")
+def settings_save(req: SettingsUpdateRequest):
+    """Lưu cấu hình mới vào .env và cập nhật môi trường runtime."""
+    env_path = Path(__file__).parent.parent / ".env"
+    
+    # Giữ nguyên pass/key nếu người dùng không đổi
+    cam_pass = req.camera_pass if req.camera_pass and req.camera_pass != "********" else os.getenv("CAMERA_PASS", "")
+    llm_key = req.ninerouter_api_key if req.ninerouter_api_key and "..." not in req.ninerouter_api_key and req.ninerouter_api_key != "********" else os.getenv("NINEROUTER_API_KEY", "")
+
+    # Cập nhật os.environ
+    os.environ["CAMERA_HOST"] = req.camera_host
+    os.environ["CAMERA_PORT"] = str(req.camera_port)
+    os.environ["CAMERA_USER"] = req.camera_user
+    os.environ["CAMERA_PASS"] = cam_pass
+    os.environ["STREAM_WIDTH"] = str(req.stream_width)
+    os.environ["STREAM_HEIGHT"] = str(req.stream_height)
+    os.environ["NINEROUTER_BASE_URL"] = req.ninerouter_base_url
+    os.environ["NINEROUTER_API_KEY"] = llm_key
+    os.environ["VLM_MODEL"] = req.vlm_model
+
+    # Ghi file .env
+    env_content = f"""# ONVIF Camera Config
+CAMERA_HOST={req.camera_host}
+CAMERA_PORT={req.camera_port}
+CAMERA_USER={req.camera_user}
+CAMERA_PASS={cam_pass}
+
+# Stream Config
+STREAM_WIDTH={req.stream_width}
+STREAM_HEIGHT={req.stream_height}
+
+# VLM / 9Router Config
+NINEROUTER_BASE_URL={req.ninerouter_base_url}
+NINEROUTER_API_KEY={llm_key}
+VLM_MODEL={req.vlm_model}
+"""
+    try:
+        env_path.write_text(env_content, encoding="utf-8")
+        return {"ok": True, "message": "Đã lưu cài đặt vào hệ thống và .env"}
+    except Exception as e:
+        raise HTTPException(500, f"Lỗi ghi .env: {e}")

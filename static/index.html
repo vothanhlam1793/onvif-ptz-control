@@ -41,6 +41,9 @@
       <button class="nav-btn" data-tab="patrol">
         <span class="nav-icon">&#8635;</span> Tuần tra & Điểm nhớ
       </button>
+      <button class="nav-btn" data-tab="settings">
+        <span class="nav-icon">&#9881;</span> Cấu hình & AI LLM
+      </button>
     </nav>
 
     <div class="aside-bottom">
@@ -306,6 +309,113 @@
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────────────────────
+         Tab 4: Settings Hub (ONVIF & LLM Config)
+         ────────────────────────────────────────────── -->
+    <div class="view-section" id="tab-settings">
+      <div class="settings-layout">
+        
+        <!-- Camera ONVIF Config Card -->
+        <div class="settings-card panel">
+          <div class="panel-head">
+            <strong>Cấu hình Camera ONVIF & Stream</strong>
+            <span>Đồng bộ và kiểm tra thông tin thiết bị</span>
+          </div>
+          <div class="settings-body">
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="cfg-cam-host">Địa chỉ IP / Host Camera:</label>
+                <input type="text" id="cfg-cam-host" placeholder="192.168.110.14" value="192.168.110.14">
+              </div>
+              <div class="form-group">
+                <label for="cfg-cam-port">Cổng ONVIF (Port):</label>
+                <input type="number" id="cfg-cam-port" placeholder="80" value="80">
+              </div>
+              <div class="form-group">
+                <label for="cfg-cam-user">Tài khoản ONVIF:</label>
+                <input type="text" id="cfg-cam-user" placeholder="admin" value="admin">
+              </div>
+              <div class="form-group">
+                <label for="cfg-cam-pass">Mật khẩu ONVIF:</label>
+                <input type="password" id="cfg-cam-pass" placeholder="Nhập mật khẩu mới...">
+              </div>
+              <div class="form-group">
+                <label for="cfg-stream-w">Độ rộng Stream (Width):</label>
+                <input type="number" id="cfg-stream-w" placeholder="1280" value="1280">
+              </div>
+              <div class="form-group">
+                <label for="cfg-stream-h">Độ cao Stream (Height):</label>
+                <input type="number" id="cfg-stream-h" placeholder="720" value="720">
+              </div>
+            </div>
+
+            <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
+              <button class="primary-btn" id="btn-sync-camera" style="background:#087f8c;">
+                🔄 Đồng bộ & Kiểm tra Camera
+              </button>
+              <span id="cam-sync-spinner" style="display:none;font-size:13px;color:#64748b;">Đang kết nối ONVIF...</span>
+            </div>
+
+            <!-- Sync Results Box -->
+            <div class="sync-result-box" id="cam-sync-box" style="display:none;">
+              <div class="sync-header" id="cam-sync-header">✓ Đồng bộ thành công</div>
+              <div class="sync-details" id="cam-sync-details"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI LLM / VLM Config Card -->
+        <div class="settings-card panel">
+          <div class="panel-head">
+            <strong>Cấu hình AI LLM / VLM (9Router / OpenAI)</strong>
+            <span>Thiết lập trí tuệ nhân tạo phân tích hình ảnh</span>
+          </div>
+          <div class="settings-body">
+            <div class="form-group" style="margin-bottom:14px;">
+              <label for="cfg-llm-url">Base URL (API Endpoint):</label>
+              <input type="text" id="cfg-llm-url" placeholder="https://9router.camerangochoang.com/v1" value="https://9router.camerangochoang.com/v1">
+            </div>
+
+            <div class="form-group" style="margin-bottom:14px;">
+              <label for="cfg-llm-key">API Key:</label>
+              <div style="display:flex;gap:8px;">
+                <input type="password" id="cfg-llm-key" placeholder="sk-..." style="flex:1;">
+                <button class="secondary-btn" id="btn-toggle-llm-key" type="button" style="padding:0 12px;">👁</button>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:14px;">
+              <label for="cfg-llm-model">Model AI (VLM / LLM):</label>
+              <input type="text" id="cfg-llm-model" placeholder="ag/gemini-3.7-flash-high" value="ag/gemini-3.7-flash-high">
+              <small style="color:#64748b;font-size:12px;margin-top:4px;display:block;">Khuyên dùng: <code>ag/gemini-3.7-flash-high</code>, <code>gpt-4o-mini</code>, <code>claude-3-7-sonnet</code></small>
+            </div>
+
+            <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
+              <button class="primary-btn" id="btn-test-llm" style="background:#167aef;">
+                ⚡ Kiểm tra kết nối AI
+              </button>
+              <span id="llm-test-spinner" style="display:none;font-size:13px;color:#64748b;">Đang gửi prompt test...</span>
+            </div>
+
+            <!-- LLM Test Result Box -->
+            <div class="sync-result-box" id="llm-test-box" style="display:none;">
+              <div class="sync-header" id="llm-test-header">✓ AI sẵn sàng</div>
+              <div class="sync-details" id="llm-test-details"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Action Bar Bottom -->
+      <div class="settings-action-bar">
+        <span id="settings-save-status" style="font-size:13px;color:#10b981;font-weight:600;"></span>
+        <button class="primary-btn" id="btn-save-settings" style="padding:10px 24px;font-size:14px;">
+          💾 Lưu cấu hình & Áp dụng ngay
+        </button>
       </div>
     </div>
 

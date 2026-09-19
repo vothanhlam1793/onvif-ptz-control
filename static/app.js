@@ -21,7 +21,8 @@ const pageTitle = document.getElementById("page-title");
 const TAB_TITLES = {
   live: { breadcrumb: "GIÁM SÁT · CAMERA PTZ", title: "Trực tiếp & Điều khiển PTZ" },
   panorama: { breadcrumb: "CÔNG CỤ AI · TOÀN CẢNH", title: "Xưởng Ghép Ảnh Panorama AI" },
-  patrol: { breadcrumb: "TỰ ĐỘNG HÓA · TUẦN TRA", title: "Thiết lập Tuần tra & Điểm nhớ" }
+  patrol: { breadcrumb: "TỰ ĐỘNG HÓA · TUẦN TRA", title: "Thiết lập Tuần tra & Điểm nhớ" },
+  settings: { breadcrumb: "HỆ THỐNG · THIẾT LẬP", title: "Cấu hình Camera ONVIF & AI LLM" }
 };
 
 navButtons.forEach(btn => {
@@ -553,8 +554,173 @@ if (btnRecalibrate) {
 }
 
 // ──────────────────────────────────────────────
+// Settings & Sync Handlers
+// ──────────────────────────────────────────────
+
+async function loadSettings() {
+  const data = await get("/settings");
+  if (!data) return;
+
+  if (document.getElementById("cfg-cam-host")) document.getElementById("cfg-cam-host").value = data.camera_host || "";
+  if (document.getElementById("cfg-cam-port")) document.getElementById("cfg-cam-port").value = data.camera_port || 80;
+  if (document.getElementById("cfg-cam-user")) document.getElementById("cfg-cam-user").value = data.camera_user || "admin";
+  if (document.getElementById("cfg-stream-w")) document.getElementById("cfg-stream-w").value = data.stream_width || 1280;
+  if (document.getElementById("cfg-stream-h")) document.getElementById("cfg-stream-h").value = data.stream_height || 720;
+  if (document.getElementById("cfg-llm-url")) document.getElementById("cfg-llm-url").value = data.ninerouter_base_url || "";
+  if (document.getElementById("cfg-llm-key")) document.getElementById("cfg-llm-key").value = data.ninerouter_api_key_masked || "";
+  if (document.getElementById("cfg-llm-model")) document.getElementById("cfg-llm-model").value = data.vlm_model || "ag/gemini-3.7-flash-high";
+
+  // Cập nhật sidebar host
+  const hostDisp = document.getElementById("cam-host-display");
+  if (hostDisp) hostDisp.textContent = data.camera_host;
+}
+
+// 1. Sync & Test Camera
+const btnSyncCam = document.getElementById("btn-sync-camera");
+const camSyncSpinner = document.getElementById("cam-sync-spinner");
+const camSyncBox = document.getElementById("cam-sync-box");
+const camSyncHeader = document.getElementById("cam-sync-header");
+const camSyncDetails = document.getElementById("cam-sync-details");
+
+if (btnSyncCam) {
+  btnSyncCam.addEventListener("click", async () => {
+    const host = document.getElementById("cfg-cam-host").value.trim();
+    const port = parseInt(document.getElementById("cfg-cam-port").value) || 80;
+    const username = document.getElementById("cfg-cam-user").value.trim();
+    const password = document.getElementById("cfg-cam-pass").value;
+
+    btnSyncCam.disabled = true;
+    camSyncSpinner.style.display = "inline";
+    camSyncBox.style.display = "none";
+
+    try {
+      const res = await post("/camera/test_sync", { host, port, username, password });
+      camSyncBox.style.display = "block";
+      if (res && res.ok) {
+        camSyncBox.className = "sync-result-box good";
+        camSyncHeader.textContent = `✓ Kết nối ONVIF thành công (${res.latency_ms} ms)`;
+        camSyncDetails.innerHTML = `
+          <b>Thiết bị:</b> ${res.manufacturer || "LC"} ${res.model || "IPC-K2E-3H3W"}<br>
+          <b>Firmware:</b> ${res.firmware || "N/A"}<br>
+          <b>Serial:</b> ${res.serial_number || "N/A"} | <b>MAC:</b> ${res.mac_address || "N/A"}<br>
+          <b>Profile PTZ:</b> ${res.profile_token || "N/A"}<br>
+          <b>RTSP URI:</b> <span style="word-break:break-all;">${res.rtsp_url || "N/A"}</span>
+        `;
+      } else {
+        camSyncBox.className = "sync-result-box bad";
+        camSyncHeader.textContent = "✗ Kết nối ONVIF thất bại";
+        camSyncDetails.textContent = res ? res.error : "Không nhận được phản hồi từ server";
+      }
+    } catch (e) {
+      camSyncBox.style.display = "block";
+      camSyncBox.className = "sync-result-box bad";
+      camSyncHeader.textContent = "✗ Lỗi xử lý";
+      camSyncDetails.textContent = String(e);
+    } finally {
+      btnSyncCam.disabled = false;
+      camSyncSpinner.style.display = "none";
+    }
+  });
+}
+
+// 2. Test LLM Connection
+const btnTestLLM = document.getElementById("btn-test-llm");
+const llmTestSpinner = document.getElementById("llm-test-spinner");
+const llmTestBox = document.getElementById("llm-test-box");
+const llmTestHeader = document.getElementById("llm-test-header");
+const llmTestDetails = document.getElementById("llm-test-details");
+const btnToggleKey = document.getElementById("btn-toggle-llm-key");
+const inputLLMKey = document.getElementById("cfg-llm-key");
+
+if (btnToggleKey && inputLLMKey) {
+  btnToggleKey.addEventListener("click", () => {
+    inputLLMKey.type = inputLLMKey.type === "password" ? "text" : "password";
+  });
+}
+
+if (btnTestLLM) {
+  btnTestLLM.addEventListener("click", async () => {
+    const base_url = document.getElementById("cfg-llm-url").value.trim();
+    const api_key = document.getElementById("cfg-llm-key").value.trim();
+    const model = document.getElementById("cfg-llm-model").value.trim();
+
+    btnTestLLM.disabled = true;
+    llmTestSpinner.style.display = "inline";
+    llmTestBox.style.display = "none";
+
+    try {
+      const res = await post("/settings/test_llm", { base_url, api_key, model });
+      llmTestBox.style.display = "block";
+      if (res && res.ok) {
+        llmTestBox.className = "sync-result-box good";
+        llmTestHeader.textContent = `✓ Phản hồi từ AI Model (${res.latency_ms} ms)`;
+        llmTestDetails.innerHTML = `
+          <b>Model:</b> ${res.model}<br>
+          <b>Phản hồi:</b> <code>${res.reply}</code><br>
+          <b>Trạng thái:</b> Sẵn sàng cho phân tích hình ảnh và VLM Panorama
+        `;
+      } else {
+        llmTestBox.className = "sync-result-box bad";
+        llmTestHeader.textContent = "✗ Kiểm tra AI thất bại";
+        llmTestDetails.textContent = res ? res.error : "Không thể kết nối đến LLM server";
+      }
+    } catch (e) {
+      llmTestBox.style.display = "block";
+      llmTestBox.className = "sync-result-box bad";
+      llmTestHeader.textContent = "✗ Lỗi xử lý";
+      llmTestDetails.textContent = String(e);
+    } finally {
+      btnTestLLM.disabled = false;
+      llmTestSpinner.style.display = "none";
+    }
+  });
+}
+
+// 3. Save Settings
+const btnSaveSettings = document.getElementById("btn-save-settings");
+const saveStatusText = document.getElementById("settings-save-status");
+
+if (btnSaveSettings) {
+  btnSaveSettings.addEventListener("click", async () => {
+    btnSaveSettings.disabled = true;
+    saveStatusText.textContent = "Đang lưu cấu hình...";
+    saveStatusText.style.color = "#3b82f6";
+
+    const payload = {
+      camera_host: document.getElementById("cfg-cam-host").value.trim(),
+      camera_port: parseInt(document.getElementById("cfg-cam-port").value) || 80,
+      camera_user: document.getElementById("cfg-cam-user").value.trim(),
+      camera_pass: document.getElementById("cfg-cam-pass").value,
+      stream_width: parseInt(document.getElementById("cfg-stream-w").value) || 1280,
+      stream_height: parseInt(document.getElementById("cfg-stream-h").value) || 720,
+      ninerouter_base_url: document.getElementById("cfg-llm-url").value.trim(),
+      ninerouter_api_key: document.getElementById("cfg-llm-key").value.trim(),
+      vlm_model: document.getElementById("cfg-llm-model").value.trim(),
+    };
+
+    try {
+      const res = await post("/settings/save", payload);
+      if (res && res.ok) {
+        saveStatusText.textContent = "✓ Đã lưu cài đặt thành công!";
+        saveStatusText.style.color = "#10b981";
+        setTimeout(() => { saveStatusText.textContent = ""; }, 4000);
+      } else {
+        saveStatusText.textContent = "✗ Không thể lưu cài đặt";
+        saveStatusText.style.color = "#ef4444";
+      }
+    } catch (e) {
+      saveStatusText.textContent = "✗ Lỗi: " + e;
+      saveStatusText.style.color = "#ef4444";
+    } finally {
+      btnSaveSettings.disabled = false;
+    }
+  });
+}
+
+// ──────────────────────────────────────────────
 // Initialization
 // ──────────────────────────────────────────────
 loadPresets();
 loadCameraProfile();
+loadSettings();
 connectWebSocket();
