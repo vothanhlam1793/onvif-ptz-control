@@ -49,6 +49,9 @@ class VirtualPTZTracker:
         
         # Profile đầy đủ
         self.profile: Optional[Dict[str, Any]] = None
+        self.total_pan_range_deg: float = 360.0
+        self.tilt_min_deg: float = -5.0
+        self.tilt_max_deg: float = 80.0
 
         # Trạng thái di chuyển liên tục
         self._moving: bool = False
@@ -67,7 +70,10 @@ class VirtualPTZTracker:
             self.full_tilt_time = prof.get("tilt", {}).get("full_tilt_time_sec", self.full_tilt_time)
             self.fov_degrees_h = prof.get("optical", {}).get("hfov_deg", self.fov_degrees_h)
             self.fov_degrees_v = prof.get("optical", {}).get("vfov_deg", self.fov_degrees_v)
-            self.pan_speed_factor = prof.get("pan", {}).get("total_pan_range_deg", 360.0) / self.full_pan_time
+            self.total_pan_range_deg = prof.get("pan", {}).get("total_pan_range_deg", 360.0)
+            self.tilt_min_deg = prof.get("tilt", {}).get("tilt_min_deg", -5.0)
+            self.tilt_max_deg = prof.get("tilt", {}).get("tilt_max_deg", 80.0)
+            self.pan_speed_factor = self.total_pan_range_deg / self.full_pan_time
             print(f"[VirtualPTZ] Đã nạp profile thiết bị '{self.camera_key}'")
             return
 
@@ -269,14 +275,55 @@ class VirtualPTZTracker:
             delta_tilt = (tilt_dir * min(1.2, t_tilt) / self.full_tilt_time) * 2.0 * (speed / 0.8)
             self.virtual_tilt = max(-1.0, min(1.0, self.virtual_tilt + delta_tilt))
 
+    # ──────────────────────────────────────────────
+    # Coordinate Conversion Formulas
+    # ──────────────────────────────────────────────
+
+    def virtual_to_physical_angles(self, pan_val: float, tilt_val: float) -> Tuple[float, float]:
+        """
+        Chuyển đổi toạ độ ảo [-1.0, 1.0] sang góc vật lý thực tế (độ):
+          - pan_deg ∈ [0.0, total_pan_range_deg] (0° -> 366°)
+          - tilt_deg ∈ [tilt_min_deg, tilt_max_deg] (-5° -> 80°)
+        """
+        pan_clamped = max(-1.0, min(1.0, pan_val))
+        tilt_clamped = max(-1.0, min(1.0, tilt_val))
+
+        pan_deg = ((pan_clamped + 1.0) / 2.0) * self.total_pan_range_deg
+        tilt_deg = self.tilt_min_deg + ((tilt_clamped + 1.0) / 2.0) * (self.tilt_max_deg - self.tilt_min_deg)
+        return round(pan_deg, 2), round(tilt_deg, 2)
+
+    def physical_angles_to_virtual(self, pan_deg: float, tilt_deg: float) -> Tuple[float, float]:
+        """
+        Chuyển đổi góc vật lý thực tế (độ) sang toạ độ ảo [-1.0, 1.0].
+        """
+        pan_val = (pan_deg / self.total_pan_range_deg) * 2.0 - 1.0
+        tilt_range = self.tilt_max_deg - self.tilt_min_deg
+        tilt_val = ((tilt_deg - self.tilt_min_deg) / (tilt_range if tilt_range > 0 else 1.0)) * 2.0 - 1.0
+        return round(max(-1.0, min(1.0, pan_val)), 4), round(max(-1.0, min(1.0, tilt_val)), 4)
+
+    def goto_angle(self, target_pan_deg: float, target_tilt_deg: float, speed: float = 0.8):
+        """
+        Quay camera tới góc vật lý thực tế (target_pan_deg, target_tilt_deg).
+        """
+        v_pan, v_tilt = self.physical_angles_to_virtual(target_pan_deg, target_tilt_deg)
+        self.goto_virtual(v_pan, v_tilt, speed=speed)
+
     def get_status(self) -> Dict[str, Any]:
-        """Trả về toạ độ ảo thời gian thực."""
+        """Trả về toạ độ ảo thời gian thực kèm góc vật lý thực tế."""
+        pan_deg, tilt_deg = self.virtual_to_physical_angles(self.virtual_pan, self.virtual_tilt)
         return {
             "pan": round(self.virtual_pan, 3),
             "tilt": round(self.virtual_tilt, 3),
             "zoom": 0.0,
+            "pan_deg": pan_deg,
+            "tilt_deg": tilt_deg,
             "pan_tilt_status": "MOVING" if self._moving else "IDLE",
             "is_homed": self.is_homed,
             "full_pan_time": self.full_pan_time,
+            "full_tilt_time": self.full_tilt_time,
             "fov_degrees_h": self.fov_degrees_h,
+            "fov_degrees_v": self.fov_degrees_v,
+            "total_pan_range_deg": self.total_pan_range_deg,
+            "tilt_min_deg": self.tilt_min_deg,
+            "tilt_max_deg": self.tilt_max_deg,
         }

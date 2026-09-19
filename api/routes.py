@@ -107,12 +107,47 @@ def mjpeg_stream():
 
 @router.get("/snapshot")
 def get_snapshot():
-    """Chụp 1 frame JPEG chất lượng cao. Dùng cho AI inspection."""
+    """Chụp 1 frame JPEG chất lượng cao kèm PTZ Telemetry qua Header."""
     from streaming.stream_relay import snapshot as do_snapshot
     data = do_snapshot(rtsp_url_main)
     if not data:
         raise HTTPException(503, "Snapshot failed")
-    return Response(content=data, media_type="image/jpeg")
+    
+    headers = {}
+    if ptz_service and ptz_service.virtual_tracker:
+        stat = ptz_service.virtual_tracker.get_status()
+        headers["X-PTZ-Pan"] = str(stat.get("pan", 0.0))
+        headers["X-PTZ-Tilt"] = str(stat.get("tilt", 0.0))
+        headers["X-PTZ-Zoom"] = str(stat.get("zoom", 0.0))
+        headers["X-PTZ-Pan-Deg"] = str(stat.get("pan_deg", 0.0))
+        headers["X-PTZ-Tilt-Deg"] = str(stat.get("tilt_deg", 0.0))
+        headers["X-PTZ-Homed"] = str(stat.get("is_homed", False))
+
+    return Response(content=data, media_type="image/jpeg", headers=headers)
+
+
+@router.get("/ptz/snapshot_with_telemetry")
+def get_snapshot_with_telemetry():
+    """
+    Chụp 1 frame JPEG kèm metadata toạ độ đầy đủ dạng JSON Base64
+    dành cho các hệ thống mở rộng (Panorama, AI Person Detection, Slew-to-Cue).
+    """
+    import base64
+    from streaming.stream_relay import snapshot as do_snapshot
+    data = do_snapshot(rtsp_url_main)
+    if not data:
+        raise HTTPException(503, "Snapshot failed")
+    
+    telemetry = {}
+    if ptz_service and ptz_service.virtual_tracker:
+        telemetry = ptz_service.virtual_tracker.get_status()
+
+    return {
+        "timestamp": asyncio.get_event_loop().time(),
+        "telemetry": telemetry,
+        "image_base64": base64.b64encode(data).decode("utf-8"),
+        "image_format": "jpeg",
+    }
 
 
 # ──────────────────────────────────────────────
@@ -278,13 +313,31 @@ class VirtualGotoRequest(BaseModel):
     speed: float = 0.8
 
 
+class AngleGotoRequest(BaseModel):
+    pan_deg: float   # Ví dụ: 0° -> 366°
+    tilt_deg: float  # Ví dụ: -5° -> 80°
+    speed: float = 0.8
+
+
 @router.post("/ptz/virtual/goto")
 def virtual_goto(req: VirtualGotoRequest):
-    """Quay tới toạ độ ảo định trước."""
+    """Quay tới toạ độ ảo định trước [-1.0, 1.0]."""
     if not ptz_service or not ptz_service.virtual_tracker:
         raise HTTPException(503, "Virtual tracker not initialized")
     try:
         ptz_service.virtual_tracker.goto_virtual(req.pan, req.tilt, req.speed)
+        return {"ok": True, "status": ptz_service.virtual_tracker.get_status()}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.post("/ptz/virtual/goto_angle")
+def virtual_goto_angle(req: AngleGotoRequest):
+    """Quay tới góc vật lý thực tế (pan_deg, tilt_deg)."""
+    if not ptz_service or not ptz_service.virtual_tracker:
+        raise HTTPException(503, "Virtual tracker not initialized")
+    try:
+        ptz_service.virtual_tracker.goto_angle(req.pan_deg, req.tilt_deg, req.speed)
         return {"ok": True, "status": ptz_service.virtual_tracker.get_status()}
     except Exception as e:
         raise HTTPException(500, str(e))
