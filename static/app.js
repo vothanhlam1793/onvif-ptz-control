@@ -701,11 +701,31 @@ if (btnSaveSettings) {
     try {
       const res = await post("/settings/save", payload);
       if (res && res.ok) {
-        saveStatusText.textContent = "✓ Đã lưu cài đặt thành công!";
+        saveStatusText.textContent = "✓ " + (res.message || "Đã lưu cài đặt thành công!");
         saveStatusText.style.color = "#10b981";
-        setTimeout(() => { saveStatusText.textContent = ""; }, 4000);
+
+        // Cập nhật giao diện Sidebar & Video Stream ngay lập tức
+        const hostDisp = document.getElementById("cam-host-display");
+        if (hostDisp) hostDisp.textContent = payload.camera_host;
+
+        if (res.camera_info) {
+          const profDisp = document.getElementById("cam-profile-display");
+          if (profDisp) profDisp.textContent = `${res.camera_info.manufacturer || "ONVIF"} ${res.camera_info.model || ""}`;
+        }
+
+        // Tải lại luồng MJPEG stream
+        if (streamImg) {
+          const oldSrc = streamImg.src.split("?")[0];
+          streamImg.src = `${oldSrc}?t=${Date.now()}`;
+        }
+
+        // Tải lại presets & camera profile
+        loadPresets();
+        loadCameraProfile();
+
+        setTimeout(() => { saveStatusText.textContent = ""; }, 5000);
       } else {
-        saveStatusText.textContent = "✗ Không thể lưu cài đặt";
+        saveStatusText.textContent = "✗ " + (res ? res.error || res.message : "Không thể lưu cài đặt");
         saveStatusText.style.color = "#ef4444";
       }
     } catch (e) {

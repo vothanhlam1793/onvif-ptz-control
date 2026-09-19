@@ -663,14 +663,69 @@ def settings_test_llm(req: LLMTestRequest):
         }
 
 
+def hot_reload_camera(host: str, port: int, user: str, password: str, width: int, height: int) -> dict:
+    """Tái kết nối sang camera ONVIF mới và khởi động lại Stream Relay."""
+    global onvif_client, stream_relay, rtsp_url_main, ptz_service
+    from core.onvif_client import OnvifClient
+    from core.ptz_service import PTZService
+    from streaming.stream_relay import StreamRelay
+
+    # 1. Dừng stream relay cũ
+    if stream_relay is not None:
+        try:
+            stream_relay.stop()
+        except Exception as e:
+            print(f"[hot_reload] Lỗi dừng relay cũ: {e}")
+
+    # 2. Khởi tạo OnvifClient mới
+    new_client = OnvifClient(host, port, user, password)
+    info = new_client.discover()
+    new_rtsp = new_client.get_stream_uri()
+
+    # 3. Khởi tạo StreamRelay mới
+    new_relay = StreamRelay(new_rtsp, width, height)
+    new_relay.start()
+
+    # 4. Gán biến toàn cục
+    onvif_client = new_client
+    stream_relay = new_relay
+    rtsp_url_main = new_rtsp
+    ptz_service = PTZService(new_client, new_rtsp)
+
+    return {
+        "camera_key": new_client.camera_key,
+        "manufacturer": new_client.manufacturer,
+        "model": new_client.model,
+        "rtsp_url": new_rtsp,
+        "profile_token": info.get("profile_token"),
+    }
+
+
 @router.post("/settings/save")
 def settings_save(req: SettingsUpdateRequest):
-    """Lưu cấu hình mới vào .env và cập nhật môi trường runtime."""
+    """Lưu cấu hình mới vào .env và Hot-Swap Camera kết nối ngay lập tức."""
     env_path = Path(__file__).parent.parent / ".env"
     
     # Giữ nguyên pass/key nếu người dùng không đổi
     cam_pass = req.camera_pass if req.camera_pass and req.camera_pass != "********" else os.getenv("CAMERA_PASS", "")
     llm_key = req.ninerouter_api_key if req.ninerouter_api_key and "..." not in req.ninerouter_api_key and req.ninerouter_api_key != "********" else os.getenv("NINEROUTER_API_KEY", "")
+
+    # Kiểm tra xem có thay đổi camera không
+    old_host = os.getenv("CAMERA_HOST", "")
+    old_port = int(os.getenv("CAMERA_PORT", "80"))
+    old_user = os.getenv("CAMERA_USER", "")
+    old_pass = os.getenv("CAMERA_PASS", "")
+    old_w = int(os.getenv("STREAM_WIDTH", "1280"))
+    old_h = int(os.getenv("STREAM_HEIGHT", "720"))
+
+    cam_changed = (
+        req.camera_host != old_host or
+        req.camera_port != old_port or
+        req.camera_user != old_user or
+        (cam_pass and cam_pass != old_pass) or
+        req.stream_width != old_w or
+        req.stream_height != old_h
+    )
 
     # Cập nhật os.environ
     os.environ["CAMERA_HOST"] = req.camera_host
@@ -701,6 +756,34 @@ VLM_MODEL={req.vlm_model}
 """
     try:
         env_path.write_text(env_content, encoding="utf-8")
-        return {"ok": True, "message": "Đã lưu cài đặt vào hệ thống và .env"}
     except Exception as e:
         raise HTTPException(500, f"Lỗi ghi .env: {e}")
+
+    hot_swap_info = None
+    if cam_changed:
+        try:
+            print(f"[settings] Đang Hot-Swap kết nối sang camera mới: {req.camera_host}:{req.camera_port}...")
+            hot_swap_info = hot_reload_camera(
+                host=req.camera_host,
+                port=req.camera_port,
+                user=req.camera_user,
+                password=cam_pass,
+                width=req.stream_width,
+                height=req.stream_height,
+            )
+            print(f"[settings] Hot-Swap thành công: {hot_swap_info}")
+        except Exception as e:
+            print(f"[settings] Hot-Swap thất bại: {e}")
+            return {
+                "ok": True,
+                "message": f"Đã lưu .env nhưng kết nối trực tiếp camera lỗi: {e}",
+                "hot_swap_success": False,
+                "error": str(e)
+            }
+
+    return {
+        "ok": True,
+        "message": "Đã lưu cài đặt và chuyển đổi camera thành công!",
+        "hot_swap_success": True,
+        "camera_info": hot_swap_info
+    }
