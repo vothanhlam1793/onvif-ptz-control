@@ -79,22 +79,15 @@ class OnvifClient:
   <wsse:Security xmlns:wsse="{WSSE_NS}" xmlns:wsu="{WSU_NS}">
     <wsse:UsernameToken>
       <wsse:Username>{self.username}</wsse:Username>
-      <wsse:Password Type="{WSSE_NS[:-4]}oasis-200401-wss-username-token-profile-1.0#PasswordDigest">{digest}</wsse:Password>
-      <wsse:Nonce EncodingType="{WSSE_NS[:-4]}oasis-200401-wss-soap-message-security-1.0#Base64Binary">{nonce}</wsse:Nonce>
+      <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">{digest}</wsse:Password>
+      <wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">{nonce}</wsse:Nonce>
       <wsu:Created>{created}</wsu:Created>
     </wsse:UsernameToken>
   </wsse:Security>
 </s:Header>"""
 
-    def _envelope(self, body: str) -> str:
-        return f"""<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
-  {self._security_header()}
-  <s:Body>{body}</s:Body>
-</s:Envelope>"""
-
-    def _post(self, url: str, body: str) -> ET.Element:
-        soap = self._envelope(body)
+    def _post(self, url: str, body: str, auth: bool = True) -> ET.Element:
+        soap = self._envelope(body, auth=auth)
         resp = self._session.post(url, data=soap.encode("utf-8"), timeout=5)
         resp.raise_for_status()
         root = ET.fromstring(resp.text)
@@ -105,6 +98,14 @@ class OnvifClient:
             raise RuntimeError(f"SOAP Fault: {reason}")
         return root
 
+    def _envelope(self, body: str, auth: bool = True) -> str:
+        header = self._security_header() if auth else "<s:Header/>"
+        return f"""<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
+  {header}
+  <s:Body>{body}</s:Body>
+</s:Envelope>"""
+
     # ──────────────────────────────────────────────
     # Discovery
     # ──────────────────────────────────────────────
@@ -112,7 +113,7 @@ class OnvifClient:
     def sync_time(self):
         """Sync time offset với camera để tránh WS-Security 401."""
         body = '<GetSystemDateAndTime xmlns="http://www.onvif.org/ver10/device/wsdl"/>'
-        root = self._post(self.device_url, body)
+        root = self._post(self.device_url, body, auth=False)
         utc = root.find(".//tt:UTCDateTime", NS)
         if utc is None:
             return
