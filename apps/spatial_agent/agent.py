@@ -22,7 +22,12 @@ from dotenv import load_dotenv
 
 from apps.spatial_agent.prompts import SPATIAL_AGENT_SYSTEM_PROMPT
 from apps.spatial_agent.tools import get_spatial_agent_tools
-from apps.spatial_agent.db import save_message, load_session_messages, ensure_session
+from apps.spatial_agent.db import (
+    save_message,
+    load_session_messages,
+    ensure_session,
+    get_formatted_spatial_prompt,
+)
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -150,7 +155,12 @@ def build_spatial_agent(tools: list | None = None, checkpointer=None):
     def chatbot_node(state: SpatialAgentState) -> dict:
         raw_messages = list(state["messages"])
         compacted = compact_messages(raw_messages)
-        messages_with_system = [SystemMessage(content=SPATIAL_AGENT_SYSTEM_PROMPT)] + compacted
+
+        # Nạp động bản đồ không gian mới nhất từ SQLite vào System Message
+        spatial_map_text = get_formatted_spatial_prompt()
+        full_system_prompt = f"{SPATIAL_AGENT_SYSTEM_PROMPT}\n\n{spatial_map_text}"
+
+        messages_with_system = [SystemMessage(content=full_system_prompt)] + compacted
         response = llm_with_tools.invoke(messages_with_system)
         return {"messages": [response]}
 

@@ -320,6 +320,83 @@ def get_spatial_memory_summary() -> Dict[str, Any]:
         }
 
 
+def get_formatted_spatial_prompt() -> str:
+    """
+    Tạo bản đồ không gian dạng văn bản phân cấp trực quan, cô đọng để nhúng trực tiếp vào System Prompt của Agent.
+    Giúp Agent nắm trọn toàn bộ cấu trúc phòng và đồ vật mà không cần gọi tool search trung gian.
+    """
+    with get_connection() as conn:
+        meta = conn.execute("SELECT * FROM space_metadata LIMIT 1").fetchone()
+        if not meta:
+            return "CHƯA CÓ DỮ LIỆU BẢN ĐỒ PHÒNG. Cần gọi scan_and_index_space_tool để quét không gian trước."
+
+        room_overview = meta["room_overview"] or "Phòng chưa có tóm tắt."
+        cells = conn.execute("SELECT * FROM spatial_cells ORDER BY col_x ASC, row_y ASC").fetchall()
+        objects = conn.execute("""
+            SELECT o.*, c.pan_deg, c.tilt_deg, c.row_y, c.col_x 
+            FROM spatial_objects o
+            JOIN spatial_cells c ON o.cell_id = c.cell_id
+            WHERE o.status = 'PRESENT'
+            ORDER BY c.col_x ASC, c.row_y ASC, o.category ASC
+        """).fetchall()
+
+        if not cells:
+            return "CHƯA CÓ DỮ LIỆU BẢN ĐỒ PHÒNG. Cần gọi scan_and_index_space_tool để quét không gian trước."
+
+        # Gom nhóm theo cột Pan
+        cols_map: Dict[int, Dict[str, Any]] = {}
+        for c in cells:
+            cx = c["col_x"]
+            if cx not in cols_map:
+                cols_map[cx] = {
+                    "pan_deg": c["pan_deg"],
+                    "cells": {}
+                }
+            cols_map[cx]["cells"][c["cell_id"]] = {
+                "tilt_deg": c["tilt_deg"],
+                "row_y": c["row_y"],
+                "summary": c["summary"],
+                "objects": []
+            }
+
+        for o in objects:
+            cid = o["cell_id"]
+            cx = o["col_x"]
+            if cx in cols_map and cid in cols_map[cx]["cells"]:
+                desc = o["label_vi"] or o["label"]
+                if o["notes"]:
+                    desc += f" ({o['notes']})"
+                cols_map[cx]["cells"][cid]["objects"].append(desc)
+
+        lines = [
+            "=== BẢN ĐỒ TRI THỨC PHÒNG (SPATIAL KNOWLEDGE MAP) ===",
+            f"TỔNG QUAN KHÔNG GIAN: {room_overview}",
+            "CẤU TRÚC 3D & DANH SÁCH VẬT THỂ THEO GÓC QUAY (ĐÃ TÍCH LUỸ):"
+        ]
+
+        # Tầng Y quy ước
+        level_names = {0: "Tầng Trên Cùng (Trần/Đỉnh)", 1: "Tầng Giữa (Tầm Mắt/Thân Kệ/Tường)", 2: "Tầng Dưới (Bàn/Sàn/Đáy Kệ)", 3: "Tầng Sàn"}
+
+        for cx in sorted(cols_map.keys()):
+            col_info = cols_map[cx]
+            pan_deg = col_info["pan_deg"]
+            lines.append(f"\n[CỘT GÓC PAN {pan_deg:.1f}° - Cột X{cx:02d}]:")
+            for cid, cdata in col_info["cells"].items():
+                ry = cdata["row_y"]
+                tilt_deg = cdata["tilt_deg"]
+                lvl_str = level_names.get(ry, f"Tầng Y{ry}")
+                obj_list = cdata["objects"]
+                if obj_list:
+                    objs_str = "; ".join(obj_list)
+                    lines.append(f"  • Ô {cid} ({lvl_str}, Tilt {tilt_deg:.1f}°): {objs_str}")
+                else:
+                    sum_str = cdata["summary"] or "Không có vật thể đáng chú ý"
+                    lines.append(f"  • Ô {cid} ({lvl_str}, Tilt {tilt_deg:.1f}°): {sum_str}")
+
+        lines.append("\n=======================================================")
+        return "\n".join(lines)
+
+
 # ──────────────────────────────────────────────
 # Chat Sessions & Messages (CRETA Pattern)
 # ──────────────────────────────────────────────

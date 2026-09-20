@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 _client: Optional[OnvifClient] = None
 _tracker: Optional[VirtualPTZTracker] = None
 _rtsp_url: str = ""
+PTZ_SPEED: float = float(os.getenv("PTZ_SPEED", "1.0"))
+PTZ_SETTLE_TIME: float = float(os.getenv("PTZ_SETTLE_TIME", "0.2"))
 
 
 def set_ptz_hardware(client: OnvifClient, tracker: VirtualPTZTracker, rtsp_url: str):
@@ -84,7 +86,7 @@ def scan_and_index_space_tool(force: bool = False) -> str:
 
     # 1. Homing camera về chuẩn
     try:
-        _tracker.home(speed=0.8)
+        _tracker.home(speed=PTZ_SPEED)
     except Exception as e:
         logger.warning(f"Homing notice: {e}")
 
@@ -125,14 +127,14 @@ def scan_and_index_space_tool(force: bool = False) -> str:
             cell_id = f"Y{r_idx}_X{c_idx:02d}"
             p_deg, t_deg = _tracker.virtual_to_physical_angles(p_val, t_val)
 
-            # Quay camera
-            _tracker.goto_virtual(p_val, t_val, speed=0.8)
-            time.sleep(0.4)
+            # Quay camera tốc độ cao
+            _tracker.goto_virtual(p_val, t_val, speed=PTZ_SPEED)
+            time.sleep(PTZ_SETTLE_TIME)
 
             # Chụp snapshot 1080p
             fb = snapshot(_rtsp_url, width=1920, height=1080)
             if not fb:
-                time.sleep(0.3)
+                time.sleep(0.15)
                 fb = snapshot(_rtsp_url, width=1280, height=720)
 
             local_path = os.path.join(out_dir, f"{cell_id}.jpg")
@@ -324,9 +326,9 @@ def slew_and_verify_target_tool(target_label: str, cell_id: str, pan_deg: float,
     if not _client or not _tracker:
         return "Lỗi: Phần cứng Camera PTZ chưa được kết nối."
 
-    print(f"\n[PTZ Slew] Đang điều khiển camera lia tới ô {cell_id}: Pan = {pan_deg:.1f}°, Tilt = {tilt_deg:.1f}°...")
-    _tracker.goto_angle(pan_deg, tilt_deg, speed=0.8)
-    time.sleep(0.4)  # Chờ ổn định cơ khí
+    print(f"\n[PTZ Slew] Đang điều khiển camera lia tới ô {cell_id}: Pan = {pan_deg:.1f}°, Tilt = {tilt_deg:.1f}° (Speed={PTZ_SPEED})...")
+    _tracker.goto_angle(pan_deg, tilt_deg, speed=PTZ_SPEED)
+    time.sleep(PTZ_SETTLE_TIME)  # Chờ ổn định cơ khí
 
     # Chụp ảnh verify thời gian thực
     fb = snapshot(_rtsp_url, width=1280, height=720)
@@ -402,8 +404,8 @@ def slew_and_verify_target_tool(target_label: str, cell_id: str, pan_deg: float,
         # Nếu độ lệch tâm > 6%, tự động thực hiện bù góc PTZ ngay trong tool
         if abs(off_x) > 0.06 or abs(off_y) > 0.06:
             print(f"[Optical Layer] Phát hiện lệch tâm (ΔX={off_x*100:+.1f}%, ΔY={off_y*100:+.1f}%). Tự động bù góc -> Pan={opt_pan}°, Tilt={opt_tilt}°...")
-            _tracker.goto_angle(opt_pan, opt_tilt, speed=0.8)
-            time.sleep(0.4)
+            _tracker.goto_angle(opt_pan, opt_tilt, speed=PTZ_SPEED)
+            time.sleep(PTZ_SETTLE_TIME)
 
             # Chụp lại snapshot mới đã căn tâm tuyệt đối
             fb_centered = snapshot(_rtsp_url, width=1280, height=720)
@@ -516,10 +518,10 @@ def get_camera_status_tool() -> str:
 
 def get_spatial_agent_tools() -> list:
     return [
-        query_spatial_memory_tool,
         slew_and_verify_target_tool,
         scan_and_index_space_tool,
         calibrate_camera_hardware_tool,
         send_telegram_alert_tool,
         get_camera_status_tool,
+        query_spatial_memory_tool,
     ]
