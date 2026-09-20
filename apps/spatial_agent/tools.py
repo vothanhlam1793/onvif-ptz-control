@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import time
+import threading
 from typing import Any, Dict, List, Optional
 import numpy as np
 
@@ -445,9 +446,12 @@ def slew_and_verify_target_tool(target_label: str, cell_id: str, pan_deg: float,
         f.write(fb)
 
     camera_key = getattr(_client, "camera_key", "uniarch_uho_s2e")
-    verify_url = upload_verified_image(fb, target_label=target_label, camera_key=camera_key)
+    
+    # Upload MinIO chạy ngầm trong background thread để không chặn luồng chính
+    threading.Thread(target=upload_verified_image, args=(fb, target_label, camera_key), daemon=True).start()
+    verify_url = ""
 
-    # Gọi Gemini 3.7 VLM thẩm định ảnh vừa chụp
+    # Gọi Gemini 3.7 VLM thẩm định ảnh vừa chụp (dùng trực tiếp base64 trong RAM)
     print(f"[VLM Verifier] Đang gửi ảnh chụp trực tiếp sang Gemini 3.7 để xác thực '{target_label}'...")
     vlm = _get_vlm()
     prompt_text = TARGET_VERIFICATION_VLM_PROMPT.format(
@@ -456,11 +460,8 @@ def slew_and_verify_target_tool(target_label: str, cell_id: str, pan_deg: float,
         target_label=target_label,
     )
 
-    if verify_url:
-        img_content = {"type": "image_url", "image_url": {"url": verify_url}}
-    else:
-        b64 = base64.b64encode(fb).decode("utf-8")
-        img_content = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+    b64 = base64.b64encode(fb).decode("utf-8")
+    img_content = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
 
     msg = HumanMessage(content=[{"type": "text", "text": prompt_text}, img_content])
     resp = vlm.invoke([msg])
@@ -626,5 +627,4 @@ def get_spatial_agent_tools() -> list:
         calibrate_camera_hardware_tool,
         send_telegram_alert_tool,
         get_camera_status_tool,
-        query_spatial_memory_tool,
     ]

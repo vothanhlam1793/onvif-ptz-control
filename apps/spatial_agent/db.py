@@ -322,8 +322,8 @@ def get_spatial_memory_summary() -> Dict[str, Any]:
 
 def get_formatted_spatial_prompt() -> str:
     """
-    Tạo bản đồ không gian dạng văn bản phân cấp trực quan, cô đọng để nhúng trực tiếp vào System Prompt của Agent.
-    Giúp Agent nắm trọn toàn bộ cấu trúc phòng và đồ vật mà không cần gọi tool search trung gian.
+    Tạo bản đồ không gian dạng văn bản phân cấp siêu tinh gọn (~600 tokens thay vì 7.500 tokens).
+    Gom nhóm danh từ chính của vật thể theo từng ô để LLM phản hồi tức thì dưới 1 giây.
     """
     with get_connection() as conn:
         meta = conn.execute("SELECT * FROM space_metadata LIMIT 1").fetchone()
@@ -333,67 +333,47 @@ def get_formatted_spatial_prompt() -> str:
         room_overview = meta["room_overview"] or "Phòng chưa có tóm tắt."
         cells = conn.execute("SELECT * FROM spatial_cells ORDER BY col_x ASC, row_y ASC").fetchall()
         objects = conn.execute("""
-            SELECT o.*, c.pan_deg, c.tilt_deg, c.row_y, c.col_x 
+            SELECT o.cell_id, o.label, o.label_vi, o.category, c.pan_deg, c.tilt_deg, c.row_y, c.col_x 
             FROM spatial_objects o
             JOIN spatial_cells c ON o.cell_id = c.cell_id
             WHERE o.status = 'PRESENT'
-            ORDER BY c.col_x ASC, c.row_y ASC, o.category ASC
+            ORDER BY c.col_x ASC, c.row_y ASC
         """).fetchall()
 
         if not cells:
             return "CHƯA CÓ DỮ LIỆU BẢN ĐỒ PHÒNG. Cần gọi scan_and_index_space_tool để quét không gian trước."
 
-        # Gom nhóm theo cột Pan
-        cols_map: Dict[int, Dict[str, Any]] = {}
-        for c in cells:
-            cx = c["col_x"]
-            if cx not in cols_map:
-                cols_map[cx] = {
-                    "pan_deg": c["pan_deg"],
-                    "cells": {}
-                }
-            cols_map[cx]["cells"][c["cell_id"]] = {
-                "tilt_deg": c["tilt_deg"],
-                "row_y": c["row_y"],
-                "summary": c["summary"],
-                "objects": []
-            }
-
+        # Gom danh sách vật thể tinh gọn theo cell_id
+        cell_objs: Dict[str, list[str]] = {}
         for o in objects:
             cid = o["cell_id"]
-            cx = o["col_x"]
-            if cx in cols_map and cid in cols_map[cx]["cells"]:
-                desc = o["label_vi"] or o["label"]
-                if o["notes"]:
-                    desc += f" ({o['notes']})"
-                cols_map[cx]["cells"][cid]["objects"].append(desc)
+            if cid not in cell_objs:
+                cell_objs[cid] = []
+            name = o["label_vi"] or o["label"]
+            if name not in cell_objs[cid]:
+                cell_objs[cid].append(name)
 
         lines = [
-            "=== BẢN ĐỒ TRI THỨC PHÒNG (SPATIAL KNOWLEDGE MAP) ===",
-            f"TỔNG QUAN KHÔNG GIAN: {room_overview}",
-            "CẤU TRÚC 3D & DANH SÁCH VẬT THỂ THEO GÓC QUAY (ĐÃ TÍCH LUỸ):"
+            "=== BẢN ĐỒ TRI THỨC PHÒNG (SPATIAL COMPACT MAP) ===",
+            f"TỔNG QUAN: {room_overview}",
+            "TOẠ ĐỘ Ô & VẬT THỂ CHÍNH (GỌI THẲNG slew_and_verify_target_tool THEO PAN/TILT DƯỚI ĐÂY):"
         ]
 
-        # Tầng Y quy ước
-        level_names = {0: "Tầng Trên Cùng (Trần/Đỉnh)", 1: "Tầng Giữa (Tầm Mắt/Thân Kệ/Tường)", 2: "Tầng Dưới (Bàn/Sàn/Đáy Kệ)", 3: "Tầng Sàn"}
+        for c in cells:
+            cid = c["cell_id"]
+            p_deg = c["pan_deg"]
+            t_deg = c["tilt_deg"]
+            objs = cell_objs.get(cid, [])
+            if objs:
+                # Chỉ lấy tối đa 8 vật thể tiêu biểu nhất trong ô để prompt luôn ngắn gọn
+                objs_short = ", ".join(objs[:8])
+                if len(objs) > 8:
+                    objs_short += f" (+{len(objs)-8} đồ khác)"
+                lines.append(f"- {cid} (Pan {p_deg:.1f}°, Tilt {t_deg:.1f}°): {objs_short}")
+            elif c["summary"]:
+                lines.append(f"- {cid} (Pan {p_deg:.1f}°, Tilt {t_deg:.1f}°): {c['summary'][:60]}")
 
-        for cx in sorted(cols_map.keys()):
-            col_info = cols_map[cx]
-            pan_deg = col_info["pan_deg"]
-            lines.append(f"\n[CỘT GÓC PAN {pan_deg:.1f}° - Cột X{cx:02d}]:")
-            for cid, cdata in col_info["cells"].items():
-                ry = cdata["row_y"]
-                tilt_deg = cdata["tilt_deg"]
-                lvl_str = level_names.get(ry, f"Tầng Y{ry}")
-                obj_list = cdata["objects"]
-                if obj_list:
-                    objs_str = "; ".join(obj_list)
-                    lines.append(f"  • Ô {cid} ({lvl_str}, Tilt {tilt_deg:.1f}°): {objs_str}")
-                else:
-                    sum_str = cdata["summary"] or "Không có vật thể đáng chú ý"
-                    lines.append(f"  • Ô {cid} ({lvl_str}, Tilt {tilt_deg:.1f}°): {sum_str}")
-
-        lines.append("\n=======================================================")
+        lines.append("==================================================")
         return "\n".join(lines)
 
 
