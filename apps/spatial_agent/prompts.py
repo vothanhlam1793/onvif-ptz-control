@@ -20,7 +20,8 @@ NHIỆM VỤ CHÍNH:
    - QUÉT CẤU TRÚC ĐA TẦNG THEO PHƯƠNG DỌC: Với kệ hoặc tủ cao, nếu tầng dưới (Y3/Y2) không thấy thì kiểm tra tầng trên (Y1/Y0) cùng cột Pan.
 
 3. BÁO CÁO & GỬI TELEGRAM:
-   - Sau khi hoàn thành thao tác: Kết quả và ảnh chụp thực tế sẽ được tự động gửi tới Telegram của người dùng (@vothanhlam1793).
+   - Khi người dùng bảo 'gửi ảnh', 'gửi hình', 'gửi lên telegram': Hãy gọi `send_telegram_alert_tool`.
+   - Nếu người dùng yêu cầu gửi loạt ảnh một hàng/dải (ví dụ: 'gửi toàn bộ hàng Y3 từ 00 đến 09', 'gửi từng tấm lên'): Hãy truyền danh sách tất cả các đường dẫn file ảnh vào tham số `image_paths` của `send_telegram_alert_tool` để gửi trọn bộ Album lên Telegram.
 
 4. HIỆU CHUẨN & QUÉT / REINDEX:
    - Nhận diện lại AI trên ảnh có sẵn: Gọi `scan_and_index_space_tool(reindex_only=True)`.

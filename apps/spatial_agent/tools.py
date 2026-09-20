@@ -30,7 +30,11 @@ from apps.spatial_agent.db import (
     upsert_discovered_objects,
 )
 from apps.spatial_agent.minio_client import upload_spatial_frame, upload_verified_image, upload_file_bytes
-from apps.spatial_agent.telegram_notifier import send_telegram_message, send_telegram_photo
+from apps.spatial_agent.telegram_notifier import (
+    send_telegram_message,
+    send_telegram_photo,
+    send_telegram_media_group,
+)
 from apps.spatial_agent.prompts import (
     SCENE_ANALYSIS_VLM_PROMPT,
     TARGET_VERIFICATION_VLM_PROMPT,
@@ -564,7 +568,7 @@ def slew_and_verify_target_tool(
 
 
 # ──────────────────────────────────────────────
-# Tool 4: Gửi Thông Báo & Ảnh Ra Telegram
+# Tool 4: Gửi Thông Báo & Ảnh Ra Telegram (Hỗ trợ 1 ảnh hoặc Album loạt ảnh)
 # ──────────────────────────────────────────────
 
 @tool
@@ -572,15 +576,30 @@ def send_telegram_alert_tool(
     message: str,
     include_current_snapshot: bool = True,
     image_url: Optional[str] = None,
+    image_paths: Optional[list[str]] = None,
 ) -> str:
-    """Gửi tin nhắn thông báo kèm hình ảnh kết quả tìm kiếm/xác thực hoặc snapshot thời gian thực của camera PTZ tới Telegram của người dùng (@vothanhlam1793).
-    Dùng khi người dùng yêu cầu gửi kết quả ra telegram hoặc báo cáo tình hình phòng.
+    """Gửi tin nhắn thông báo kèm hình ảnh kết quả tìm kiếm hoặc album/loạt nhiều ảnh tới Telegram của người dùng (@vothanhlam1793).
+    - image_paths: Danh sách đường dẫn các file ảnh cần gửi hàng loạt (ví dụ gửi loạt ảnh hàng Y3_X00 -> Y3_X09).
+    - image_url: Đường dẫn ảnh đơn lẻ.
     """
     global _tracker, _rtsp_url
     
-    # 1. Ưu tiên gửi kèm ảnh
+    # 1. Gửi album ảnh nếu có danh sách nhiều ảnh
+    if image_paths and isinstance(image_paths, list) and len(image_paths) > 1:
+        items = []
+        for idx, p in enumerate(image_paths):
+            cap = message if idx == 0 else ""
+            items.append({"photo": p, "caption": cap})
+        resp = send_telegram_media_group(photos=items)
+        if resp.get("ok"):
+            return f"Đã gửi thành công Album {len(image_paths)} hình ảnh tới Telegram (@vothanhlam1793)."
+        return f"Gặp lỗi khi gửi Album Telegram: {resp.get('description') or resp.get('error')}"
+
+    # 2. Gửi ảnh đơn lẻ
     photo_payload = None
-    if image_url and (image_url.startswith("http://") or image_url.startswith("https://")):
+    if image_paths and len(image_paths) == 1:
+        photo_payload = image_paths[0]
+    elif image_url and (image_url.startswith("http://") or image_url.startswith("https://") or os.path.exists(image_url)):
         photo_payload = image_url
     elif include_current_snapshot and _rtsp_url:
         fb = snapshot(_rtsp_url, width=1280, height=720)

@@ -81,3 +81,54 @@ def send_telegram_photo(
     except Exception as e:
         logger.error(f"Failed to send Telegram photo: {e}")
         return {"ok": False, "error": str(e)}
+
+
+def send_telegram_media_group(
+    photos: list[dict],
+    chat_id: Optional[Union[str, int]] = None,
+) -> dict:
+    """
+    Gửi một album/loạt ảnh (Media Group) lên Telegram.
+    photos: danh sách dict [{"photo": bytes_or_path, "caption": "..."}]
+    """
+    token, default_chat_id, api_url = _get_config()
+    target_chat_id = str(chat_id or default_chat_id)
+    url = f"{api_url}/sendMediaGroup"
+
+    import json
+    media_json = []
+    files = {}
+
+    for idx, item in enumerate(photos[:10]): # Telegram cho phép tối đa 10 ảnh / 1 media group
+        attach_name = f"photo_{idx}"
+        p = item.get("photo")
+        cap = item.get("caption", "")
+        
+        media_item = {
+            "type": "photo",
+            "media": f"attach://{attach_name}",
+            "caption": cap[:1024],
+            "parse_mode": "HTML"
+        }
+        media_json.append(media_item)
+
+        if isinstance(p, str) and os.path.exists(p):
+            with open(p, "rb") as f:
+                files[attach_name] = (f"{attach_name}.jpg", f.read(), "image/jpeg")
+        elif isinstance(p, bytes):
+            files[attach_name] = (f"{attach_name}.jpg", p, "image/jpeg")
+
+    if not files:
+        return {"ok": False, "error": "No valid photos to send"}
+
+    data = {
+        "chat_id": target_chat_id,
+        "media": json.dumps(media_json)
+    }
+
+    try:
+        resp = requests.post(url, data=data, files=files, timeout=30)
+        return resp.json()
+    except Exception as e:
+        logger.error(f"Failed to send Telegram media group: {e}")
+        return {"ok": False, "error": str(e)}
