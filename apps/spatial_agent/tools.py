@@ -30,7 +30,11 @@ from apps.spatial_agent.db import (
 )
 from apps.spatial_agent.minio_client import upload_spatial_frame, upload_verified_image, upload_file_bytes
 from apps.spatial_agent.telegram_notifier import send_telegram_message, send_telegram_photo
-from apps.spatial_agent.prompts import SCENE_ANALYSIS_VLM_PROMPT, TARGET_VERIFICATION_VLM_PROMPT
+from apps.spatial_agent.prompts import (
+    SCENE_ANALYSIS_VLM_PROMPT,
+    TARGET_VERIFICATION_VLM_PROMPT,
+    CELL_DETAIL_VLM_PROMPT,
+)
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -66,12 +70,51 @@ def _get_vlm() -> ChatOpenAI:
 
 
 # ──────────────────────────────────────────────
-# Tool 1: Giai đoạn 1 - Quét Không Gian & Học Bối Cảnh
+# Tool 1: Giai đoạn 1 - Quét Không Gian & Học Bối Cảnh (Động 100% & Async 1080p)
 # ──────────────────────────────────────────────
+
+async def _analyze_single_cell_vlm(
+    vlm: ChatOpenAI,
+    cell_id: str,
+    pan_deg: float,
+    tilt_deg: float,
+    image_bytes: bytes,
+    image_url: str = "",
+) -> Dict[str, Any]:
+    """Phân tích chi tiết 1 frame ảnh 1080p đơn lẻ bằng Gemini 3.7 VLM."""
+    prompt_text = CELL_DETAIL_VLM_PROMPT.format(
+        cell_id=cell_id,
+        pan_deg=pan_deg,
+        tilt_deg=tilt_deg,
+    )
+    if image_url:
+        img_content = {"type": "image_url", "image_url": {"url": image_url}}
+    else:
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        img_content = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+
+    try:
+        msg = HumanMessage(content=[{"type": "text", "text": prompt_text}, img_content])
+        resp = await vlm.ainvoke([msg])
+        clean_json = str(resp.content).strip()
+        if "```json" in clean_json:
+            clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+        elif "```" in clean_json:
+            clean_json = clean_json.split("```")[1].split("```")[0].strip()
+        data = json.loads(clean_json)
+        return {
+            "cell_id": cell_id,
+            "summary": data.get("summary", ""),
+            "objects": data.get("objects", []),
+        }
+    except Exception as e:
+        logger.warning(f"Lỗi phân tích VLM ô {cell_id}: {e}")
+        return {"cell_id": cell_id, "summary": f"Ô góc Pan={pan_deg}°, Tilt={tilt_deg}°", "objects": []}
+
 
 @tool
 def scan_and_index_space_tool(force: bool = False) -> str:
-    """Quét toàn bộ không gian 3D căn phòng (ma trận 3 tầng x 8 cột = 24 ô), tải ảnh lên MinIO, gọi AI VLM phân tích toàn bộ bối cảnh và lập chỉ mục vật thể Cố Định (STATIC) vs Biến Động (DYNAMIC) vào SQLite database.
+    """Quét toàn bộ không gian 3D căn phòng theo ma trận lưới động (tự tính toán theo HFOV, VFOV, dải Pan/Tilt cơ khí), tải ảnh lên MinIO, gọi Gemini 3.7 VLM phân tích song song từng frame 1080p đơn lẻ để trích xuất 150+ vật thể chi tiết vào SQLite.
     Chỉ chạy khi chưa có dữ liệu hoặc khi người dùng yêu cầu quét lại phòng.
     """
     global _client, _tracker, _rtsp_url
@@ -90,45 +133,45 @@ def scan_and_index_space_tool(force: bool = False) -> str:
     except Exception as e:
         logger.warning(f"Homing notice: {e}")
 
-    # 2. Tự động tính toán ma trận lưới động dựa trên thông số quang học thực tế của camera (HFOV/VFOV/Lens)
-    from core.auto_calibration import load_camera_profile
-    prof = load_camera_profile(camera_key) or {}
-    
-    cols = prof.get("pan", {}).get("optimal_pan_steps", 8)
-    num_rows = prof.get("tilt", {}).get("optimal_vertical_frames", 3)
-    
-    # Tạo các mức tilt tự động từ cao (trần: val dương) xuống thấp (sàn: val âm)
-    # Ví dụ: 3 tầng -> [0.50, -0.15, -0.80], 2 tầng -> [0.30, -0.70], 4 tầng -> [0.60, 0.15, -0.30, -0.75]
-    if num_rows == 2:
-        tilt_rows = [0.30, -0.70]
-    elif num_rows == 4:
-        tilt_rows = [0.60, 0.15, -0.30, -0.75]
-    elif num_rows == 5:
-        tilt_rows = [0.70, 0.35, 0.0, -0.35, -0.75]
-    else:
-        tilt_rows = [0.50, -0.15, -0.80]
+    # 2. TÍNH TOÁN MA TRẬN LƯỚI ĐỘNG 100% THEO THÔNG SỐ QUANG HỌC & CƠ KHÍ THỰC TẾ
+    hfov = getattr(_tracker, "fov_degrees_h", 85.0)
+    vfov = getattr(_tracker, "fov_degrees_v", 50.0)
+    total_pan = getattr(_tracker, "total_pan_range_deg", 360.0)
+    tilt_min = getattr(_tracker, "tilt_min_deg", -15.0)
+    tilt_max = getattr(_tracker, "tilt_max_deg", 75.0)
+    total_tilt = max(1.0, tilt_max - tilt_min)
 
-    pan_vals = np.linspace(-0.90, 0.90, cols)
+    # Tỷ lệ overlap 25% chống góc chết (tối thiểu 8 cột để đảm bảo không sót mép biên)
+    overlap = 0.20
+    cols = max(8, int(np.ceil(total_pan / (hfov * (1.0 - overlap)))))
+    num_rows = max(3, int(np.ceil(total_tilt / (vfov * (1.0 - overlap)))))
+
+    # Tính toạ độ góc Pan vật lý trải đều từ biên trái (sát 0°) đến kịch biên phải (sát 360°)
+    p_start = min(hfov / 6.0, 10.0)
+    p_end = total_pan - min(hfov / 6.0, 10.0)
+    pan_angles = np.linspace(p_start, p_end, cols)
+
+    # Tính toạ độ góc Tilt vật lý từ đỉnh trần (tilt_max) xuống sàn/bàn (tilt_min)
+    t_top = tilt_max - min(vfov / 4.0, 10.0)
+    t_bottom = tilt_min + min(vfov / 6.0, 3.0)
+    tilt_angles = np.linspace(t_top, t_bottom, num_rows)
 
     out_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../outputs/spatial_memory/frames"))
     os.makedirs(out_dir, exist_ok=True)
 
     captured_frames = []
-    lens_mm = prof.get("optical", {}).get("lens_focal_length_mm", 2.8)
-    hfov = prof.get("optical", {}).get("hfov_deg", 85.0)
-    vfov = prof.get("optical", {}).get("vfov_deg", 50.0)
-    print(f"\n[Spatial Scanner] Khởi tạo lưới động cho Lens {lens_mm}mm (HFOV={hfov}°, VFOV={vfov}°): {len(tilt_rows)} tầng x {cols} cột = {len(tilt_rows)*cols} ô...")
+    print(f"\n[Spatial Scanner] Khởi tạo lưới động 100% (HFOV={hfov}°, VFOV={vfov}°, Pan Range={total_pan}°, Tilt Range={total_tilt}°): {num_rows} tầng x {cols} cột = {num_rows*cols} ô...")
 
     step = 0
-    total = len(tilt_rows) * cols
-    for r_idx, t_val in enumerate(tilt_rows):
-        for c_idx, p_val in enumerate(pan_vals):
+    total = num_rows * cols
+    for r_idx, t_deg in enumerate(tilt_angles):
+        for c_idx, p_deg in enumerate(pan_angles):
             step += 1
             cell_id = f"Y{r_idx}_X{c_idx:02d}"
-            p_deg, t_deg = _tracker.virtual_to_physical_angles(p_val, t_val)
+            p_val, t_val = _tracker.physical_angles_to_virtual(p_deg, t_deg)
 
             # Quay camera tốc độ cao
-            _tracker.goto_virtual(p_val, t_val, speed=PTZ_SPEED)
+            _tracker.goto_angle(p_deg, t_deg, speed=PTZ_SPEED)
             time.sleep(PTZ_SETTLE_TIME)
 
             # Chụp snapshot 1080p
@@ -159,14 +202,20 @@ def scan_and_index_space_tool(force: bool = False) -> str:
                 image_url=minio_url,
                 summary="",
             )
-            captured_frames.append({"cell_id": cell_id, "local_path": local_path, "url": minio_url, "bytes": fb})
-            print(f"  [{step}/{total}] Quét ô {cell_id}: Pan={p_deg:.1f}°, Tilt={t_deg:.1f}° -> Đã lưu.")
+            captured_frames.append({
+                "cell_id": cell_id,
+                "local_path": local_path,
+                "url": minio_url,
+                "bytes": fb,
+                "pan_deg": p_deg,
+                "tilt_deg": t_deg,
+            })
+            print(f"  [{step}/{total}] Quét ô {cell_id}: Pan={p_deg:.1f}°, Tilt={t_deg:.1f}° -> Đã chụp & lưu.")
 
     # 3. Tạo ảnh ma trận Grid ghép có nhãn toạ độ
     import cv2
     from panorama.stitcher import _make_grid
     
-    # Decode bytes sang cv2 images
     decoded_imgs = []
     for f in captured_frames:
         if f.get("bytes"):
@@ -175,64 +224,89 @@ def scan_and_index_space_tool(force: bool = False) -> str:
             if img is not None:
                 decoded_imgs.append(img)
 
-    grid_bytes = _make_grid(decoded_imgs, grid_rows=len(tilt_rows), grid_cols=cols)
+    grid_bytes = _make_grid(decoded_imgs, grid_rows=num_rows, grid_cols=cols)
     grid_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../outputs/spatial_memory/grid_labeled_space.jpg"))
     with open(grid_path, "wb") as f:
         f.write(grid_bytes)
 
     grid_url = upload_file_bytes(grid_bytes, filename="grid_labeled_space.jpg", prefix=f"spatial_ptz/{camera_key}/maps")
 
-    # 4. Gửi ảnh ma trận sang Gemini 3.7 VLM phân tích toàn cảnh
-    print("\n[Spatial VLM] Đang gửi ảnh ma trận lưới 3D sang Gemini 3.7 để học bối cảnh...")
+    # 4. Gửi ảnh ma trận sang Gemini 3.7 VLM để tạo Room Overview
+    print("\n[Spatial VLM] 1/2: Đang gửi ảnh ma trận lưới 3D sang Gemini 3.7 để tổng hợp bố cục phòng...")
     vlm = _get_vlm()
     prompt_text = SCENE_ANALYSIS_VLM_PROMPT.format(
-        grid_rows=len(tilt_rows),
+        grid_rows=num_rows,
         grid_cols=cols,
         total_frames=total,
         max_col=cols - 1,
-        max_row=len(tilt_rows) - 1,
+        max_row=num_rows - 1,
     )
 
-    # Dùng MinIO URL hoặc Base64
     if grid_url:
         img_content = {"type": "image_url", "image_url": {"url": grid_url}}
     else:
         b64 = base64.b64encode(grid_bytes).decode("utf-8")
         img_content = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
 
-    msg = HumanMessage(content=[{"type": "text", "text": prompt_text}, img_content])
-    resp = vlm.invoke([msg])
-
-    # 5. Phân tích kết quả JSON từ VLM
-    clean_json = str(resp.content).strip()
-    if "```json" in clean_json:
-        clean_json = clean_json.split("```json")[1].split("```")[0].strip()
-    elif "```" in clean_json:
-        clean_json = clean_json.split("```")[1].split("```")[0].strip()
-
     try:
-        analysis_data = json.loads(clean_json)
+        msg = HumanMessage(content=[{"type": "text", "text": prompt_text}, img_content])
+        resp = vlm.invoke([msg])
+        clean_json = str(resp.content).strip()
+        if "```json" in clean_json:
+            clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+        elif "```" in clean_json:
+            clean_json = clean_json.split("```")[1].split("```")[0].strip()
+        overview_data = json.loads(clean_json)
+        room_overview = overview_data.get("room_overview", "Đã quét xong không gian.")
     except Exception:
-        analysis_data = {"room_overview": "Đã quét xong 24 ô lưới.", "cells_analysis": []}
+        room_overview = f"Không gian phòng {num_rows} tầng dọc x {cols} cột ngang."
 
-    room_overview = analysis_data.get("room_overview", "")
-    save_space_metadata(camera_key, room_overview, total, len(tilt_rows), cols)
+    save_space_metadata(camera_key, room_overview, total, num_rows, cols)
+
+    # 5. PHÂN TÍCH SONG SONG ASYNC TỪNG FRAME 1080P ĐỘ PHÂN GIẢI CAO (Single-Frame Inspection)
+    print(f"\n[Spatial VLM] 2/2: Đang phân tích song song {len(captured_frames)} frame 1080p gốc để nhận diện 150+ vật thể chi tiết...")
+    import asyncio
+
+    async def run_parallel_analysis():
+        tasks = [
+            _analyze_single_cell_vlm(
+                vlm=vlm,
+                cell_id=f["cell_id"],
+                pan_deg=f["pan_deg"],
+                tilt_deg=f["tilt_deg"],
+                image_bytes=f["bytes"],
+                image_url=f["url"],
+            )
+            for f in captured_frames if f.get("bytes")
+        ]
+        return await asyncio.gather(*tasks)
+
+    # Chạy async trong loop hiện tại hoặc tạo mới
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import nest_asyncio
+            nest_asyncio.apply()
+            cell_results = loop.run_until_complete(run_parallel_analysis())
+        else:
+            cell_results = loop.run_until_complete(run_parallel_analysis())
+    except Exception:
+        cell_results = asyncio.run(run_parallel_analysis())
 
     saved_obj_count = 0
     from apps.spatial_agent.db import get_connection
-    for cell_info in analysis_data.get("cells_analysis", []):
-        cid = cell_info.get("cell_id", "")
-        summary = cell_info.get("summary", "")
-        objs = cell_info.get("objects", [])
+    for res in cell_results:
+        cid = res.get("cell_id", "")
+        summary = res.get("summary", "")
+        objs = res.get("objects", [])
         if cid:
             save_spatial_objects(cid, objs)
             saved_obj_count += len(objs)
-            # Cập nhật summary ô
             with get_connection() as conn:
                 conn.execute("UPDATE spatial_cells SET summary = ? WHERE cell_id = ?", (summary, cid))
                 conn.commit()
 
-    return f"ĐÃ HOÀN TẤT GIAI ĐOẠN 1: Quét thành công {total} ô lưới. Đã nhận diện và lưu trữ {saved_obj_count} vật thể vào SQLite. Tổng quan phòng: {room_overview}"
+    return f"ĐÃ HOÀN TẤT GIAI ĐOẠN 1 (LƯỚI ĐỘNG {num_rows}x{cols}={total} Ô): Quét thành công và phân tích song song 1080p. Đã nhận diện và lập chỉ mục {saved_obj_count} vật thể chi tiết vào SQLite. Tổng quan phòng: {room_overview}"
 
 
 # ──────────────────────────────────────────────

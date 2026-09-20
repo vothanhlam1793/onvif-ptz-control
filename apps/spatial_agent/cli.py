@@ -19,6 +19,8 @@ from core.virtual_ptz import VirtualPTZTracker
 from apps.spatial_agent.tools import set_ptz_hardware
 from apps.spatial_agent.agent import build_spatial_agent, execute_spatial_turn
 from apps.spatial_agent.db import get_all_cells, get_all_objects, get_spatial_memory_summary
+from apps.spatial_agent.telegram_notifier import send_telegram_message, send_telegram_photo
+from streaming.stream_relay import snapshot
 
 console = Console()
 
@@ -119,21 +121,44 @@ async def async_main():
             if user_input.lower() == "calib":
                 user_input = "Hãy hiệu chuẩn lại thông số phần cứng của camera ngay bây giờ."
 
+            t_start = time.time()
             with console.status("[bold yellow]🤖 Agent đang suy luận và điều khiển PTZ...[/bold yellow]"):
                 result = await execute_spatial_turn(
                     agent_app=agent_app,
                     session_id=session_id,
                     user_text=user_input,
                 )
+            latency = time.time() - t_start
 
             # In chi tiết các tool call đã chạy
             for action in result.get("tool_actions", []):
                 t_name = action.get("name")
                 console.print(f"[dim]⚙️ [Tool Action] {t_name}[/dim]")
 
-            # In câu trả lời chính thức
+            # In câu trả lời chính thức kèm độ trễ phản hồi
             reply = result.get("reply", "")
-            console.print(Panel(Markdown(reply), title="[bold green]PTZ Agent[/bold green]", border_style="green"))
+            console.print(Panel(
+                Markdown(reply),
+                title=f"[bold green]PTZ Agent[/bold green] [dim](⏱️ {latency:.2f}s)[/dim]",
+                border_style="green",
+                subtitle=f"[dim]Latency: {latency:.2f}s[/dim]"
+            ))
+
+            # ── TỰ ĐỘNG GỬI KẾT QUẢ + HÌNH ẢNH TELEGRAM SAU MỖI LỆNH ──
+            # Nếu trong turn chưa có tool send_telegram_alert_tool được gọi, tự động gửi ảnh live + kết quả
+            tool_names = [a.get("name") for a in result.get("tool_actions", [])]
+            if "send_telegram_alert_tool" not in tool_names and rtsp_url:
+                try:
+                    fb = snapshot(rtsp_url, width=1280, height=720)
+                    caption = f"🤖 [PTZ CLI Agent] ({latency:.2f}s)\n{reply}"
+                    if len(caption) > 1024:
+                        caption = caption[:1020] + "..."
+                    if fb:
+                        send_telegram_photo(photo=fb, caption=caption)
+                    else:
+                        send_telegram_message(text=caption)
+                except Exception as ex:
+                    logger.warning(f"Lỗi auto-send Telegram: {ex}")
 
         except (KeyboardInterrupt, EOFError):
             break

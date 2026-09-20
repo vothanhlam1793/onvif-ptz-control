@@ -91,7 +91,7 @@ HÃY QUAN SÁT ẢNH THỜI GIAN THỰC VÀ TRẢ VỀ JSON DUY NHẤT:
   "state_change": "PRESENT",
   "detected_context_objects": [
     {{
-      "label": "Tên tiếng Anh (ví dụ: phone_charger, water_cup, laptop, chair, car_key, backpack)",
+      "label": "Tên tiếng Anh (ví dụ: phone_charger, water_cup, laptop, chair, car_key, backpack, fan, drink_can)",
       "label_vi": "Tên tiếng Việt chuẩn",
       "category": "STATIC hoặc DYNAMIC",
       "confidence": 0.90,
@@ -104,12 +104,40 @@ HÃY QUAN SÁT ẢNH THỜI GIAN THỰC VÀ TRẢ VỀ JSON DUY NHẤT:
 
 Quy tắc thẩm định và học bối cảnh (Context Learning):
 1. Thẩm định mục tiêu chính ({target_label}):
+   - Nới lỏng ngữ nghĩa và màu sắc: Nếu người dùng tìm kiếm theo mô tả tương quan (ví dụ 'ly nước gần lon vàng cam', 'quạt máy', 'bình nước'), chỉ cần phát hiện được đối tượng hoặc cụm đối tượng có hình dáng, màu sắc tương đồng, hãy đánh dấu `is_found: true` và tính toán BBox bao trọn cụm mục tiêu.
    - `bbox`: Toạ độ chuẩn hoá [0..1000] [ymin, xmin, ymax, xmax] bao trọn mục tiêu.
    - `center_offset_x_pct`: (cx - 500) / 500, `center_offset_y_pct`: (cy - 500) / 500.
    - `is_centered`: `true` nếu sai số cả 2 trục <= 0.06.
    - `state_change`: `PRESENT`, `MOVED` hoặc `NOT_FOUND`.
 2. Tự động nhận diện & cập nhật toàn bộ vật thể liên đới (`detected_context_objects`):
    - Hãy quan sát KỸ toàn bộ khung hình và liệt kê TẤT CẢ các vật thể khác xuất hiện trong ảnh (cả đồ vật tĩnh và đồ vật di động có liên quan xung quanh).
-   - `category`: `STATIC` (cửa, máy lạnh, đèn, kệ cố định, ổ cắm gắn tường) hoặc `DYNAMIC` (người, laptop, cốc nước, điện thoại, sạc, chìa khoá, balo, ghế xoay).
+   - `category`: `STATIC` (cửa, máy lạnh, đèn, kệ cố định, ổ cắm gắn tường, quạt treo) hoặc `DYNAMIC` (người, laptop, cốc/ly nước, lon nước, điện thoại, sạc, chìa khoá, balo, quạt đứng/quạt bàn, robot, thùng rác, ghế).
    - Đảm bảo trích xuất đầy đủ để hệ thống cập nhật vào bộ nhớ dài hạn, tránh phải quét lại từ đầu khi tìm kiếm các món đồ này sau này.
+"""
+
+CELL_DETAIL_VLM_PROMPT = """Bạn là chuyên gia phân tích thị giác không gian 3D chi tiết độ phân giải cao 1080p.
+Đây là bức ảnh chụp tại ô {cell_id} (Góc quay vật lý: Pan = {pan_deg}°, Tilt = {tilt_deg}°).
+
+NHIỆM VỤ: Hãy quan sát cực kỳ kỹ lưỡng mọi ngóc ngách trong ảnh và trích xuất TẤT CẢ các vật thể (từ vật thể lớn kiến trúc đến vật thể nhỏ đồ dùng cá nhân: cốc/ly nước, lon nước ngọt, chai lọ, củ sạc, dây điện, quạt bàn/quạt cây, camera phụ, sách vở, hộp đồ, dụng cụ, thùng carton...).
+
+TRẢ VỀ JSON DUY NHẤT:
+```json
+{{
+  "summary": "Tóm tắt ngắn gọn các đặc điểm và bố cục chính nhìn thấy trong ô này",
+  "objects": [
+    {{
+      "label": "Tên tiếng Anh chuẩn (ví dụ: electric_fan, water_cup, yellow_drink_can, phone_charger, robot_car, door, bed, monitor)",
+      "label_vi": "Tên tiếng Việt rõ nghĩa và kèm màu sắc (ví dụ: Quạt cây Senko màu xanh, Lon nước ngọt màu vàng cam, Ly thủy tinh trong suốt, Củ sạc trắng)",
+      "category": "STATIC hoặc DYNAMIC",
+      "confidence": 0.95,
+      "bbox": [ymin, xmin, ymax, xmax],
+      "notes": "Vị trí cụ thể (ví dụ: Trên tầng 2 kệ sắt, Trên mặt tủ gỗ cạnh loa, Dưới sàn gạch bên phải)"
+    }}
+  ]
+}}
+```
+
+Quy tắc phân loại:
+- `STATIC`: Vật thể gắn tường, sàn, trần, kiến trúc cố định (Cửa, Khung bao sổ, Máy lạnh, Đèn tuýp, Kệ sắt cố định, Ổ cắm âm tường).
+- `DYNAMIC`: Mọi đồ vật di động, vật dụng sinh hoạt, thiết bị rời (Quạt đứng, Quạt bàn, Con người, Ghế, Màn hình máy tính, Thùng case PC, Loa, Xe robot, Lon nước, Ly/cốc nước, Bình giữ nhiệt, Balo, Chăn gối, Giường ngủ đơn).
 """
