@@ -95,13 +95,17 @@ class StreamRelay:
 
 def snapshot(rtsp_url: str, width: int = 1920, height: int = 1080) -> Optional[bytes]:
     """
-    Chụp 1 frame đơn từ RTSP stream.
-    Dùng cho AI inspection: chất lượng cao, không cần stream liên tục.
+    Chụp 1 frame đơn từ RTSP stream với cấu hình độ trễ thấp (Low-latency Fast Grab).
     """
     cmd = [
         "ffmpeg",
+        "-nostats",
         "-loglevel", "quiet",
         "-rtsp_transport", "tcp",
+        "-fflags", "nobuffer+discardcorrupt",
+        "-flags", "low_delay",
+        "-analyzeduration", "500000",
+        "-probesize", "500000",
         "-i", rtsp_url,
         "-vf", f"scale={width}:{height}",
         "-vframes", "1",
@@ -111,7 +115,7 @@ def snapshot(rtsp_url: str, width: int = 1920, height: int = 1080) -> Optional[b
         "pipe:1",
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, timeout=5)
+        result = subprocess.run(cmd, capture_output=True, timeout=3)
         if result.returncode == 0 and result.stdout:
             return result.stdout
     except Exception:

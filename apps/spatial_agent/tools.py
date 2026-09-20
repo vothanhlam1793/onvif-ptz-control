@@ -424,17 +424,26 @@ def calculate_optical_target_angle(
 # ──────────────────────────────────────────────
 
 @tool
-def slew_and_verify_target_tool(target_label: str, cell_id: str, pan_deg: float, tilt_deg: float) -> str:
-    """Điều khiển camera PTZ lia tới góc Pan/Tilt của ô nghi vấn, chụp ảnh thời gian thực, thẩm định VLM và TỰ ĐỘNG CĂN TÂM QUANG HỌC 1 BƯỚC (1-Shot Optical Centering) nếu đối tượng bị lệch tâm."""
+def slew_and_verify_target_tool(
+    target_label: str,
+    cell_id: str,
+    pan_deg: float,
+    tilt_deg: float,
+    verify_with_vlm: bool = False,
+) -> str:
+    """Điều khiển camera PTZ lia tới góc Pan/Tilt của ô mục tiêu:
+    - verify_with_vlm = False (MẶC ĐỊNH SIÊU TỐC < 1s): Dùng cho các lệnh 'chụp ảnh', 'quay tới', 'nhìn sang', 'hướng camera'. Camera lia tới góc, chụp ảnh và phản hồi ngay lập tức (KHÔNG tốn token VLM, độ trễ cực thấp).
+    - verify_with_vlm = True: Chỉ dùng khi người dùng yêu cầu 'tìm', 'xác thực xem có... không', 'căn tâm đối tượng nhỏ'. Sẽ kích hoạt AI VLM thẩm định và tự động căn tâm quang học 1-Shot.
+    """
     global _client, _tracker, _rtsp_url
     if not _client or not _tracker:
         return "Lỗi: Phần cứng Camera PTZ chưa được kết nối."
 
-    print(f"\n[PTZ Slew] Đang điều khiển camera lia tới ô {cell_id}: Pan = {pan_deg:.1f}°, Tilt = {tilt_deg:.1f}° (Speed={PTZ_SPEED})...")
+    print(f"\n[PTZ Slew] Đang điều khiển camera lia tới ô {cell_id}: Pan = {pan_deg:.1f}°, Tilt = {tilt_deg:.1f}° (Speed={PTZ_SPEED}, VLM Verify={verify_with_vlm})...")
     _tracker.goto_angle(pan_deg, tilt_deg, speed=PTZ_SPEED)
     time.sleep(PTZ_SETTLE_TIME)  # Chờ ổn định cơ khí
 
-    # Chụp ảnh verify thời gian thực
+    # Chụp ảnh snapshot thời gian thực
     fb = snapshot(_rtsp_url, width=1280, height=720)
     if not fb:
         return f"Lỗi: Không lấy được snapshot từ camera tại góc Pan={pan_deg}, Tilt={tilt_deg}."
@@ -449,9 +458,21 @@ def slew_and_verify_target_tool(target_label: str, cell_id: str, pan_deg: float,
     
     # Upload MinIO chạy ngầm trong background thread để không chặn luồng chính
     threading.Thread(target=upload_verified_image, args=(fb, target_label, camera_key), daemon=True).start()
-    verify_url = ""
 
-    # Gọi Gemini 3.7 VLM thẩm định ảnh vừa chụp (dùng trực tiếp base64 trong RAM)
+    # ── CHẾ ĐỘ 1: FAST DIRECT AIM (< 1.0s, Không qua VLM) ──
+    if not verify_with_vlm:
+        return json.dumps({
+            "is_found": True,
+            "mode": "FAST_DIRECT_AIM",
+            "target_label": target_label,
+            "cell_id": cell_id,
+            "pan_deg": pan_deg,
+            "tilt_deg": tilt_deg,
+            "local_image_path": local_verify_path,
+            "message": f"Camera đã lia tới mục tiêu '{target_label}' tại ô {cell_id} (Pan={pan_deg:.1f}°, Tilt={tilt_deg:.1f}°). Ảnh đã được chụp và lưu."
+        }, ensure_ascii=False, indent=2)
+
+    # ── CHẾ ĐỘ 2: DEEP OPTICAL VERIFICATION (Có VLM thẩm định & căn tâm) ──
     print(f"[VLM Verifier] Đang gửi ảnh chụp trực tiếp sang Gemini 3.7 để xác thực '{target_label}'...")
     vlm = _get_vlm()
     prompt_text = TARGET_VERIFICATION_VLM_PROMPT.format(
@@ -489,7 +510,7 @@ def slew_and_verify_target_tool(target_label: str, cell_id: str, pan_deg: float,
         hfov = getattr(_tracker, "fov_degrees_h", 85.0)
         vfov = getattr(_tracker, "fov_degrees_v", 50.0)
         pan_type = getattr(_tracker, "pan_type", "bounded_stops")
-        total_pan = getattr(_tracker, "total_pan_range_deg", 360.0)
+        total_pan = getattr(_tracker, "total_pan_range_deg", 365.0)
         tilt_min = getattr(_tracker, "tilt_min_deg", -15.0)
         tilt_max = getattr(_tracker, "tilt_max_deg", 75.0)
 
@@ -516,8 +537,7 @@ def slew_and_verify_target_tool(target_label: str, cell_id: str, pan_deg: float,
             if fb_centered:
                 with open(local_verify_path, "wb") as f:
                     f.write(fb_centered)
-                verify_url = upload_verified_image(fb_centered, target_label=target_label, camera_key=camera_key)
-                ver_result["live_image_url"] = verify_url
+                threading.Thread(target=upload_verified_image, args=(fb_centered, target_label, camera_key), daemon=True).start()
                 ver_result["pan_deg"] = opt_pan
                 ver_result["tilt_deg"] = opt_tilt
                 ver_result["is_centered"] = True
@@ -536,7 +556,6 @@ def slew_and_verify_target_tool(target_label: str, cell_id: str, pan_deg: float,
         print(f"[Spatial Memory] Đã tự động học & cập nhật {upserted} vật thể liên đới nhìn thấy tại ô {cell_id} vào SQLite.")
         ver_result["in_flight_learned_objects_count"] = upserted
 
-    ver_result["live_image_url"] = verify_url
     ver_result["local_image_path"] = local_verify_path
     ver_result["pan_deg"] = pan_deg
     ver_result["tilt_deg"] = tilt_deg
