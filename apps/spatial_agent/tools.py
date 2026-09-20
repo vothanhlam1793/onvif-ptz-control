@@ -133,20 +133,19 @@ def scan_and_index_space_tool(force: bool = False, reindex_only: bool = False) -
     # ── THUẬT TOÁN TÍNH TOÁN MA TRẬN LƯỚI ĐỘNG 100% THEO THÔNG SỐ QUANG HỌC & CƠ KHÍ ──
     hfov = getattr(_tracker, "fov_degrees_h", 85.0)
     vfov = getattr(_tracker, "fov_degrees_v", 50.0)
-    total_pan = getattr(_tracker, "total_pan_range_deg", 360.0)
+    total_pan = getattr(_tracker, "total_pan_range_deg", 365.0)
     tilt_min = getattr(_tracker, "tilt_min_deg", -15.0)
     tilt_max = getattr(_tracker, "tilt_max_deg", 75.0)
     total_tilt = max(1.0, tilt_max - tilt_min)
 
-    # Tỷ lệ overlap 35% chống méo rìa và đảm bảo bắt trọn biên cơ khí 360°
-    # Chọn delta_pan nhỏ hơn để sinh đủ 10 cột phủ kín kịch biên 358°
-    overlap = 0.40
+    # Tỷ lệ overlap 35% chống méo rìa và đảm bảo bắt trọn biên cơ khí 365°
+    overlap = 0.35
     delta_pan = hfov * (1.0 - overlap)
     delta_tilt = vfov * (1.0 - overlap)
 
-    # Dải Pan tâm camera: Quét sát từ 5.0° đến 358.0° (kịch biên cơ khí)
+    # Dải Pan tâm camera: Quét sát từ 3.0° (chốt trái) đến 362.0° (kịch chốt phải)
     p_start = min(5.0, hfov * 0.08)
-    p_end = total_pan - min(2.0, hfov * 0.05)
+    p_end = total_pan - min(3.0, hfov * 0.05)
     cols = max(10, int(np.ceil((p_end - p_start) / delta_pan)) + 1)
     pan_angles = np.linspace(p_start, p_end, cols)
 

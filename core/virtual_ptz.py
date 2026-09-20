@@ -112,20 +112,20 @@ class VirtualPTZTracker:
 
     def home(self, speed: float = 0.8) -> Dict[str, Any]:
         """
-        Quy trình chuẩn hoá góc (Homing):
-        Quay kịch trái -> Gán Pan = -1.0
-        Quay kịch dưới -> Gán Tilt = -1.0
-        Quay về vị trí trung tâm (0.0, 0.0)
+        Quy trình chuẩn hoá góc (Homing) bám sát 2 cạnh cơ khí vật lý:
+        1. Quay kịch trái chạm chốt chặn cơ khí trái -> Gán Pan = -1.0 (0.0°)
+        2. Quay kịch dưới chạm chốt chặn cơ khí dưới -> Gán Tilt = -1.0 (tilt_min_deg)
+        3. Quay về vị trí trung tâm (0.0, 0.0) tương ứng (Pan = total_pan_range_deg/2, Tilt = horizon)
         """
         with self._lock:
-            # 1. Quay kịch trái
+            # 1. Quay kịch trái chạm chốt chặn cơ khí (Left End-Stop)
             self.client.continuous_move(-speed, 0.0)
             time.sleep(self.full_pan_time + 0.8)
             self.client.stop()
             time.sleep(0.3)
             self.virtual_pan = -1.0
 
-            # 2. Quay kịch dưới
+            # 2. Quay kịch dưới chạm chốt chặn cơ khí dưới (Bottom End-Stop)
             self.client.continuous_move(0.0, -speed)
             time.sleep(self.full_tilt_time + 0.5)
             self.client.stop()
@@ -284,8 +284,8 @@ class VirtualPTZTracker:
     def virtual_to_physical_angles(self, pan_val: float, tilt_val: float) -> Tuple[float, float]:
         """
         Chuyển đổi toạ độ ảo [-1.0, 1.0] sang góc vật lý thực tế (độ):
-          - pan_deg ∈ [0.0, total_pan_range_deg] (0° -> 366°)
-          - tilt_deg ∈ [tilt_min_deg, tilt_max_deg] (-5° -> 80°)
+          - pan_deg ∈ [0.0, total_pan_range_deg] (0° -> 365.0°)
+          - tilt_deg ∈ [tilt_min_deg, tilt_max_deg] (-15° -> 75°)
         """
         pan_clamped = max(-1.0, min(1.0, pan_val))
         tilt_clamped = max(-1.0, min(1.0, tilt_val))
@@ -306,9 +306,9 @@ class VirtualPTZTracker:
     def goto_angle(self, target_pan_deg: float, target_tilt_deg: float, speed: float = 0.8):
         """
         Quay camera tới góc vật lý thực tế (target_pan_deg, target_tilt_deg).
-        Tự động xử lý cơ chế Bounded Clamping hoặc Shortest Path tuỳ theo pan_type.
+        Tự động xử lý cơ chế Bounded Clamping trọn dải [0.0, total_pan_range_deg].
         """
-        # Nếu là bounded_stops: Clamp trong dải vật lý cho phép
+        # Nếu là bounded_stops: Clamp trong trọn dải vật lý cho phép [0.0, total_pan_range_deg]
         if getattr(self, "pan_type", "bounded_stops") == "bounded_stops" or not getattr(self, "allow_zero_wrap_around", False):
             clamped_pan = max(0.0, min(self.total_pan_range_deg, target_pan_deg))
         else:

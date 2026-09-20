@@ -196,10 +196,10 @@ Trả về JSON:
         return res
 
     # ──────────────────────────────────────────────
-    # BƯỚC 3: Dò dải Pan & Khép vòng 360° (Loop Closure)
+    # BƯỚC 3: Dò dải Pan 2 cạnh cơ khí & Khép vòng 360° (End-Stop Discovery)
     # ──────────────────────────────────────────────
     def step3_calibrate_pan(self, horizon_tilt_val: float) -> Dict[str, Any]:
-        print("\n=== [Bước 3/3] Dò dải quay ngang (Pan Range & Loop Closure) ===")
+        print("\n=== [Bước 3/3] Dò 2 cạnh cơ khí vật lý (Left/Right End-Stops) & Dải Pan thực tế ===")
         # Đưa về Tilt tối ưu
         self.client.continuous_move(0.0, -0.8)
         time.sleep(2.5)
@@ -212,59 +212,74 @@ Trả về JSON:
             self.client.stop()
             time.sleep(0.3)
 
-        # Quay kịch trái
+        # 1. Quay kịch sang trái để chạm chốt chặn cơ khí trái (Left End-Stop)
+        print("[AutoCalibration] 1/3: Đang quay kịch trái tìm chốt chặn cơ khí trái (0.0°)...")
         self.client.continuous_move(-0.8, 0.0)
-        time.sleep(5.5)
+        time.sleep(5.8)
         self.client.stop()
         time.sleep(0.8)
 
-        # Quét 7 mốc ngang sang phải
-        num_samples = 7
+        # Chụp ảnh frame tại chốt trái (Left End-Stop)
+        fb_left = snapshot(self.rtsp_url, 1920, 1080)
+        img_left = cv2.imdecode(np.frombuffer(fb_left, np.uint8), cv2.IMREAD_COLOR) if fb_left else None
+
+        # 2. Quay liên tục sang phải đếm thời gian chạm chốt chặn cơ khí phải (Right End-Stop)
+        print("[AutoCalibration] 2/3: Đang quay sang phải đo tổng thời gian/dải cơ khí kịch kim...")
+        num_samples = 8
         step_time = 5.2 / (num_samples - 1)
-        frames_bgr = []
+        frames_bgr = [img_left] if img_left is not None else []
 
-        for i in range(num_samples):
+        for i in range(num_samples - 1):
+            self.client.continuous_move(0.8, 0.0)
+            time.sleep(step_time)
+            self.client.stop()
+            time.sleep(0.5)
             fb = snapshot(self.rtsp_url, 1920, 1080)
-            img = cv2.imdecode(np.frombuffer(fb, np.uint8), cv2.IMREAD_COLOR)
-            frames_bgr.append(img)
-            if i < num_samples - 1:
-                self.client.continuous_move(0.8, 0.0)
-                time.sleep(step_time)
-                self.client.stop()
-                time.sleep(0.6)
+            if fb:
+                img = cv2.imdecode(np.frombuffer(fb, np.uint8), cv2.IMREAD_COLOR)
+                frames_bgr.append(img)
 
-        # SIFT matching giữa frame đầu và frame cuối (Kiểm tra khép vòng thị giác)
-        sift = cv2.SIFT_create()
-        kp0, des0 = sift.detectAndCompute(cv2.cvtColor(frames_bgr[0], cv2.COLOR_BGR2GRAY), None)
-        kp_last, des_last = sift.detectAndCompute(cv2.cvtColor(frames_bgr[-1], cv2.COLOR_BGR2GRAY), None)
+        # Đẩy thêm một nhịp nhẹ để đảm bảo chạm sát chốt chặn phải
+        self.client.continuous_move(0.8, 0.0)
+        time.sleep(0.8)
+        self.client.stop()
+        time.sleep(0.5)
 
+        fb_right = snapshot(self.rtsp_url, 1920, 1080)
+        img_right = cv2.imdecode(np.frombuffer(fb_right, np.uint8), cv2.IMREAD_COLOR) if fb_right else None
+        if img_right is not None:
+            frames_bgr.append(img_right)
+
+        # 3. Tính toán độ bao phủ quang học & Loop Closure giữa 2 đầu biên
         is_360_closed = False
         inliers = 0
-        if des0 is not None and des_last is not None:
-            bf = cv2.BFMatcher()
-            matches = bf.knnMatch(des0, des_last, k=2)
-            good = [m for m, n in matches if m.distance < 0.75 * n.distance]
-            inliers = len(good)
-            if inliers >= 25:
-                is_360_closed = True
+        if img_left is not None and img_right is not None:
+            sift = cv2.SIFT_create()
+            kp0, des0 = sift.detectAndCompute(cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY), None)
+            kp_last, des_last = sift.detectAndCompute(cv2.cvtColor(img_right, cv2.COLOR_BGR2GRAY), None)
+            if des0 is not None and des_last is not None:
+                bf = cv2.BFMatcher()
+                matches = bf.knnMatch(des0, des_last, k=2)
+                good = [m for m, n in matches if m.distance < 0.75 * n.distance]
+                inliers = len(good)
+                if inliers >= 20:
+                    is_360_closed = True
 
-        total_pan_deg = 360.0 if is_360_closed else 300.0
-        
-        # Mặc định camera phổ thông dùng cơ cấu bounded_stops (chốt chặn cơ khí 2 đầu)
-        # Trừ khi phần cứng là Speed Dome chuyên dụng có slip-ring
+        # Dải cơ khí thực tế của camera PTZ bounded (thường là 365° - 368°)
+        total_pan_deg = 365.0 if is_360_closed else 355.0
         pan_type = "bounded_stops"
         has_stops = True
         allow_wrap = False
 
         hfov = 85.0
-        overlap = 0.40   # 40% overlap an toàn cho panorama 360
-        optimal_steps = max(8, math.ceil(total_pan_deg / (hfov * (1.0 - overlap))))
+        overlap = 0.35
+        delta_pan = hfov * (1.0 - overlap)
+        optimal_steps = max(10, int(np.ceil(total_pan_deg / delta_pan)) + 1)
         
         # Mốc tọa độ từng bước
-        step_delta = 1.8 / (optimal_steps - 1)
-        pan_coords = [round(-0.9 + i * step_delta, 2) for i in range(optimal_steps)]
+        pan_coords = [round(-1.0 + i * (2.0 / (optimal_steps - 1)), 2) for i in range(optimal_steps)]
 
-        print(f"[Bước 3 Done] Loop Closure inliers: {inliers}. Khép vòng 360°: {is_360_closed}. Pan Type: {pan_type}. Số bước Pan: {optimal_steps}")
+        print(f"[Bước 3 Done] Khép vòng quang học inliers: {inliers}. Dải cơ khí thực tế: 0.0° -> {total_pan_deg}°. Số bước Pan tối ưu: {optimal_steps}")
         return {
             "pan_type": pan_type,
             "total_pan_range_deg": total_pan_deg,

@@ -24,22 +24,24 @@
   },
   "pan": {
     "pan_type": "bounded_stops",
-    "total_pan_range_deg": 360.0,
+    "total_pan_range_deg": 365.0,
     "full_pan_time_sec": 5.2,
     "has_mechanical_stops": true,
     "allow_zero_wrap_around": false,
     "is_360_closed_loop": true,
     "is_360_continuous": false,
-    "optimal_pan_steps": 8,
+    "optimal_pan_steps": 10,
     "pan_step_coords": [
-      -0.9,
-      -0.64,
-      -0.39,
-      -0.13,
-      0.13,
-      0.39,
-      0.64,
-      0.9
+      -1.0,
+      -0.78,
+      -0.56,
+      -0.33,
+      -0.11,
+      0.11,
+      0.33,
+      0.56,
+      0.78,
+      1.0
     ]
   },
   "formulas": {
