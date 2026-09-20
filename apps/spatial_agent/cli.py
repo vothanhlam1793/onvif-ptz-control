@@ -36,7 +36,7 @@ def print_banner():
         "[dim]Hệ thống định vị không gian 360° kết hợp SQLite + MinIO + Gemini 3.7 VLM[/dim]",
         border_style="cyan"
     ))
-    console.print("[dim]Lệnh nhanh: [bold]scan[/bold] (quét phòng) | [bold]calib[/bold] (hiệu chuẩn camera) | [bold]map[/bold] (danh sách vật thể) | [bold]status[/bold] (góc) | [bold]q[/bold] (thoát)[/dim]\n")
+    console.print("[dim]Lệnh nhanh: [bold]scan[/bold] (quét phòng mới) | [bold]reindex[/bold] (AI nhận diện lại không xoay cam) | [bold]calib[/bold] (hiệu chuẩn) | [bold]map[/bold] (vật thể) | [bold]status[/bold] (góc) | [bold]q[/bold] (thoát)[/dim]\n")
 
 
 def display_objects_table():
@@ -120,6 +120,9 @@ async def async_main():
 
             if user_input.lower() == "calib":
                 user_input = "Hãy hiệu chuẩn lại thông số phần cứng của camera ngay bây giờ."
+
+            if user_input.lower() == "reindex":
+                user_input = "Hãy chạy re-index AI phân tích lại toàn bộ kho ảnh có sẵn không cần xoay camera."
 
             t_start = time.time()
             with console.status("[bold yellow]🤖 Agent đang suy luận và điều khiển PTZ...[/bold yellow]"):
