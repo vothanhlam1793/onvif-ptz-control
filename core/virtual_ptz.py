@@ -220,7 +220,16 @@ class VirtualPTZTracker:
             # 1. Quay Pan
             if abs(delta_pan) > 0.02:
                 pan_dir = 1.0 if delta_pan > 0 else -1.0
-                t_pan = (abs(delta_pan) / 2.0) * self.full_pan_time * (0.8 / speed)
+                # Bù thời gian trễ khởi động motor ONVIF (Motor Inrush Latency ~ 0.16s)
+                raw_t_pan = (abs(delta_pan) / 2.0) * self.full_pan_time * (0.8 / speed)
+                t_pan = raw_t_pan + (0.16 if raw_t_pan > 0.10 else 0.0)
+                
+                # Nếu đích đến là kịch biên phải (+1.0), tăng thêm thời gian để ép sát chốt chặn vật lý
+                if target_pan >= 0.90 and pan_dir > 0:
+                    t_pan += 0.8
+                elif target_pan <= -0.90 and pan_dir < 0:
+                    t_pan += 0.8
+
                 self.client.continuous_move(pan_dir * speed, 0.0)
                 time.sleep(t_pan)
                 self.client.stop()
@@ -230,11 +239,18 @@ class VirtualPTZTracker:
             # 2. Quay Tilt
             if abs(delta_tilt) > 0.02:
                 tilt_dir = 1.0 if delta_tilt > 0 else -1.0
-                t_tilt = (abs(delta_tilt) / 2.0) * self.full_tilt_time * (0.8 / speed)
+                raw_t_tilt = (abs(delta_tilt) / 2.0) * self.full_tilt_time * (0.8 / speed)
+                t_tilt = raw_t_tilt + (0.08 if raw_t_tilt > 0.15 else 0.0)
+
+                if target_tilt >= 0.95 and tilt_dir > 0:
+                    t_tilt += 0.3
+                elif target_tilt <= -0.95 and tilt_dir < 0:
+                    t_tilt += 0.3
+
                 self.client.continuous_move(0.0, tilt_dir * speed)
                 time.sleep(t_tilt)
                 self.client.stop()
-                time.sleep(0.2)
+                time.sleep(0.15)
                 self.virtual_tilt = target_tilt
 
     def click_aim(self, click_x: float, click_y: float, frame_w: float = 1280.0, frame_h: float = 720.0):
