@@ -89,15 +89,21 @@ class OnvifClient:
 
     def _post(self, url: str, body: str, auth: bool = True) -> ET.Element:
         soap = self._envelope(body, auth=auth)
-        resp = self._session.post(url, data=soap.encode("utf-8"), timeout=5)
-        resp.raise_for_status()
-        root = ET.fromstring(resp.text)
-        # Check SOAP Fault
-        fault = root.find(".//s:Fault", NS)
-        if fault is not None:
-            reason = fault.findtext(".//s:Text", default="Unknown", namespaces=NS)
-            raise RuntimeError(f"SOAP Fault: {reason}")
-        return root
+        for attempt in range(3):
+            try:
+                resp = self._session.post(url, data=soap.encode("utf-8"), timeout=10)
+                resp.raise_for_status()
+                root = ET.fromstring(resp.text)
+                # Check SOAP Fault
+                fault = root.find(".//s:Fault", NS)
+                if fault is not None:
+                    reason = fault.findtext(".//s:Text", default="Unknown", namespaces=NS)
+                    raise RuntimeError(f"SOAP Fault: {reason}")
+                return root
+            except Exception as e:
+                if attempt == 2:
+                    raise
+                time.sleep(0.3)
 
     def _envelope(self, body: str, auth: bool = True) -> str:
         header = self._security_header() if auth else "<s:Header/>"

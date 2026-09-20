@@ -89,7 +89,7 @@ class AutoCalibrationEngine:
         return self.profile
 
     # ──────────────────────────────────────────────
-    # BƯỚC 1: Hiệu chuẩn trục dọc (Tilt & VFOV)
+    # BƯỚC 1: Hiệu chuẩn trục dọc (Tilt & VFOV) & Đo quang học thực nghiệm
     # ──────────────────────────────────────────────
     def step1_calibrate_tilt(self) -> Dict[str, Any]:
         print("\n=== [Bước 1/3] Hiệu chuẩn trục dọc (Tilt VFOV & Range) ===")
@@ -114,14 +114,15 @@ class AutoCalibrationEngine:
 - Ảnh 1 (BOTTOM): Kịch đáy (-1.0).
 - Ảnh 2 (TOP): Kịch trần (+1.0).
 Ước tính:
-1. single_frame_vfov_deg: Góc nhìn dọc 1 frame tĩnh.
-2. total_tilt_range_deg: Tổng dải quay dọc kịch đáy -> kịch trần.
+1. single_frame_vfov_deg: Góc nhìn dọc 1 frame tĩnh (dựa trên tiêu cự lens: 2.8mm ~ 50°, 3.6mm ~ 40°, 2.4mm ~ 70°).
+2. total_tilt_range_deg: Tổng dải quay dọc kịch đáy -> kịch trần (thường từ 80° đến 95°).
 3. tilt_min_deg: Góc trục quang kịch đáy (so với mặt ngang 0°).
 4. tilt_max_deg: Góc trục quang kịch trần.
-5. optimal_vertical_frames: Số frame dọc cần quét (overlap 25-30%).
+5. single_frame_hfov_deg: Góc nhìn ngang ước lượng (2.8mm ~ 85°, 3.6mm ~ 70°, 2.4mm ~ 110°).
+6. lens_focal_length_mm: Tiêu cự suy biến (ví dụ: 2.4, 2.8, 3.6, 4.0).
 
 Trả về JSON:
-{"single_frame_vfov_deg": <float>, "total_tilt_range_deg": <float>, "tilt_min_deg": <float>, "tilt_max_deg": <float>, "optimal_vertical_frames": <int>}"""
+{"single_frame_vfov_deg": <float>, "single_frame_hfov_deg": <float>, "total_tilt_range_deg": <float>, "tilt_min_deg": <float>, "tilt_max_deg": <float>, "lens_focal_length_mm": <float>}"""
 
         llm = ChatOpenAI(model=VLM_MODEL, base_url=NINEROUTER_BASE_URL, api_key=NINEROUTER_API_KEY, max_tokens=400)
         msg = HumanMessage(content=[
@@ -133,7 +134,16 @@ Trả về JSON:
         content = resp.content.strip()
         s, e = content.find("{"), content.rfind("}") + 1
         res = json.loads(content[s:e])
-        print(f"[Bước 1 Done] VFOV={res.get('single_frame_vfov_deg')}°, Dải Tilt={res.get('total_tilt_range_deg')}°")
+        
+        # Tính toán số tầng quét dọc tối ưu tự động dựa trên VFOV thực tế
+        vfov = float(res.get("single_frame_vfov_deg", 50.0))
+        total_tilt = float(res.get("total_tilt_range_deg", 90.0))
+        overlap_y = 0.35  # 35% overlap dọc
+        step_y = vfov * (1.0 - overlap_y)
+        optimal_vertical_frames = max(2, math.ceil(total_tilt / step_y))
+        res["optimal_vertical_frames"] = optimal_vertical_frames
+
+        print(f"[Bước 1 Done] VFOV={vfov}°, HFOV={res.get('single_frame_hfov_deg', 85.0)}°, Lens={res.get('lens_focal_length_mm', 2.8)}mm, Dải Tilt={total_tilt}°, Số tầng quét dọc N_rows={optimal_vertical_frames}")
         return res
 
     # ──────────────────────────────────────────────
@@ -223,12 +233,12 @@ Trả về JSON:
                 self.client.stop()
                 time.sleep(0.6)
 
-        # SIFT matching giữa frame đầu và frame cuối
+        # SIFT matching giữa frame đầu và frame cuối (Kiểm tra khép vòng thị giác)
         sift = cv2.SIFT_create()
         kp0, des0 = sift.detectAndCompute(cv2.cvtColor(frames_bgr[0], cv2.COLOR_BGR2GRAY), None)
         kp_last, des_last = sift.detectAndCompute(cv2.cvtColor(frames_bgr[-1], cv2.COLOR_BGR2GRAY), None)
 
-        is_360 = False
+        is_360_closed = False
         inliers = 0
         if des0 is not None and des_last is not None:
             bf = cv2.BFMatcher()
@@ -236,9 +246,16 @@ Trả về JSON:
             good = [m for m, n in matches if m.distance < 0.75 * n.distance]
             inliers = len(good)
             if inliers >= 25:
-                is_360 = True
+                is_360_closed = True
 
-        total_pan_deg = 360.0 if is_360 else 300.0
+        total_pan_deg = 360.0 if is_360_closed else 300.0
+        
+        # Mặc định camera phổ thông dùng cơ cấu bounded_stops (chốt chặn cơ khí 2 đầu)
+        # Trừ khi phần cứng là Speed Dome chuyên dụng có slip-ring
+        pan_type = "bounded_stops"
+        has_stops = True
+        allow_wrap = False
+
         hfov = 85.0
         overlap = 0.40   # 40% overlap an toàn cho panorama 360
         optimal_steps = max(8, math.ceil(total_pan_deg / (hfov * (1.0 - overlap))))
@@ -247,10 +264,14 @@ Trả về JSON:
         step_delta = 1.8 / (optimal_steps - 1)
         pan_coords = [round(-0.9 + i * step_delta, 2) for i in range(optimal_steps)]
 
-        print(f"[Bước 3 Done] Loop Closure inliers: {inliers}. Khép vòng 360°: {is_360}. Số bước Pan: {optimal_steps}")
+        print(f"[Bước 3 Done] Loop Closure inliers: {inliers}. Khép vòng 360°: {is_360_closed}. Pan Type: {pan_type}. Số bước Pan: {optimal_steps}")
         return {
+            "pan_type": pan_type,
             "total_pan_range_deg": total_pan_deg,
-            "is_360_continuous": is_360,
+            "has_mechanical_stops": has_stops,
+            "allow_zero_wrap_around": allow_wrap,
+            "is_360_closed_loop": is_360_closed,
+            "is_360_continuous": False,
             "loop_closure_inliers": inliers,
             "optimal_pan_steps": optimal_steps,
             "pan_step_coords": pan_coords,
@@ -280,29 +301,36 @@ Trả về JSON:
                 "hardware_id": self.client.hardware_id,
             },
             "optical": {
-                "hfov_deg": 85.0,
-                "vfov_deg": float(t_info.get("single_frame_vfov_deg", 46.0)),
+                "hfov_deg": float(t_info.get("single_frame_hfov_deg", 85.0)),
+                "vfov_deg": float(t_info.get("single_frame_vfov_deg", 50.0)),
+                "lens_focal_length_mm": float(t_info.get("lens_focal_length_mm", 2.8)),
             },
             "tilt": {
-                "tilt_min_deg": float(t_info.get("tilt_min_deg", -5.0)),
-                "tilt_max_deg": float(t_info.get("tilt_max_deg", 80.0)),
-                "total_tilt_range_deg": float(t_info.get("total_tilt_range_deg", 85.0)),
+                "tilt_min_deg": float(t_info.get("tilt_min_deg", -15.0)),
+                "tilt_max_deg": float(t_info.get("tilt_max_deg", 75.0)),
+                "total_tilt_range_deg": float(t_info.get("total_tilt_range_deg", 90.0)),
                 "full_tilt_time_sec": 2.4,
                 "optimal_horizon_tilt_val": float(h_info.get("optimal_horizon_tilt_val", -0.80)),
                 "optimal_horizon_tilt_deg": float(h_info.get("optimal_horizon_tilt_deg", 4.0)),
-                "optimal_vertical_frames": int(t_info.get("optimal_vertical_frames", 4)),
+                "optimal_vertical_frames": int(t_info.get("optimal_vertical_frames", 3)),
             },
             "pan": {
+                "pan_type": p_info.get("pan_type", "bounded_stops"),
                 "total_pan_range_deg": float(p_info.get("total_pan_range_deg", 360.0)),
                 "full_pan_time_sec": 5.2,
-                "is_360_continuous": bool(p_info.get("is_360_continuous", True)),
-                "optimal_pan_steps": int(p_info.get("optimal_pan_steps", 6)),
-                "pan_step_coords": p_info.get("pan_step_coords", [-0.90, -0.54, -0.18, 0.18, 0.54, 0.90]),
+                "has_mechanical_stops": p_info.get("has_mechanical_stops", True),
+                "allow_zero_wrap_around": p_info.get("allow_zero_wrap_around", False),
+                "is_360_closed_loop": p_info.get("is_360_closed_loop", True),
+                "is_360_continuous": p_info.get("is_360_continuous", False),
+                "optimal_pan_steps": int(p_info.get("optimal_pan_steps", 8)),
+                "pan_step_coords": p_info.get("pan_step_coords", []),
             },
             "formulas": {
                 "formula_horizon_tilt": "tilt_deg = tilt_min_deg + ((tilt_val - (-1.0)) / 2.0) * (tilt_max_deg - tilt_min_deg)",
                 "formula_pan_steps": "N_pan = ceil(total_pan_range_deg / (HFOV * (1.0 - overlap_ratio)))",
+                "formula_tilt_rows": "N_tilt = ceil(total_tilt_range_deg / (VFOV * (1.0 - overlap_ratio)))"
             },
             "calibration_duration_sec": round(time.time() - t0, 1),
+            "updated_at": time.time(),
         }
         return profile

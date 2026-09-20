@@ -6,34 +6,38 @@
     "serial_number": "210235U5GPQ236005144",
     "mac_address": "489e9dce8c9a",
     "firmware_version": "GIHOS-B2101.9.5.C00010.240813",
-    "hardware_id": "1.0"
+    "hardware_id": "Uho-S2E"
   },
   "optical": {
     "hfov_deg": 85.0,
-    "vfov_deg": 46.0,
-    "dist_coeffs": [-0.14, 0.02, 0.0, 0.0, 0.0]
+    "vfov_deg": 50.0,
+    "lens_focal_length_mm": 2.8
   },
   "tilt": {
-    "tilt_min_deg": -10.0,
-    "tilt_max_deg": 80.0,
+    "tilt_min_deg": -15.0,
+    "tilt_max_deg": 75.0,
     "total_tilt_range_deg": 90.0,
-    "full_tilt_time_sec": 2.5,
+    "full_tilt_time_sec": 2.4,
     "optimal_horizon_tilt_val": -0.8,
     "optimal_horizon_tilt_deg": 0.0,
     "optimal_vertical_frames": 3
   },
   "pan": {
-    "total_pan_range_deg": 355.0,
-    "full_pan_time_sec": 5.0,
+    "pan_type": "bounded_stops",
+    "total_pan_range_deg": 360.0,
+    "full_pan_time_sec": 5.2,
+    "has_mechanical_stops": true,
+    "allow_zero_wrap_around": false,
+    "is_360_closed_loop": true,
     "is_360_continuous": false,
     "optimal_pan_steps": 8,
     "pan_step_coords": [
       -0.9,
       -0.64,
-      -0.38,
+      -0.39,
       -0.13,
       0.13,
-      0.38,
+      0.39,
       0.64,
       0.9
     ]
@@ -42,5 +46,6 @@
     "formula_horizon_tilt": "tilt_deg = tilt_min_deg + ((tilt_val - (-1.0)) / 2.0) * (tilt_max_deg - tilt_min_deg)",
     "formula_pan_steps": "N_pan = ceil(total_pan_range_deg / (HFOV * (1.0 - overlap_ratio)))"
   },
-  "updated_at": 1789836000.0
+  "calibration_duration_sec": 96.7,
+  "updated_at": 1789878239.24151
 }

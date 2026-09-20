@@ -47,6 +47,11 @@ outputs/panorama/
 outputs/tilt_calibration/
 outputs/horizon_pan_calibration/
 outputs/temp/
+outputs/spatial_memory/
+outputs/full_space_3d/
+outputs/live_scan/
+data/*.sqlite3
+data/*.db
 *.jpg
 *.jpeg
 *.png

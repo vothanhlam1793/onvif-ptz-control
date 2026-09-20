@@ -71,10 +71,12 @@ class VirtualPTZTracker:
             self.fov_degrees_h = prof.get("optical", {}).get("hfov_deg", self.fov_degrees_h)
             self.fov_degrees_v = prof.get("optical", {}).get("vfov_deg", self.fov_degrees_v)
             self.total_pan_range_deg = prof.get("pan", {}).get("total_pan_range_deg", 360.0)
+            self.pan_type = prof.get("pan", {}).get("pan_type", "bounded_stops")
+            self.allow_zero_wrap_around = prof.get("pan", {}).get("allow_zero_wrap_around", False)
             self.tilt_min_deg = prof.get("tilt", {}).get("tilt_min_deg", -5.0)
             self.tilt_max_deg = prof.get("tilt", {}).get("tilt_max_deg", 80.0)
             self.pan_speed_factor = self.total_pan_range_deg / self.full_pan_time
-            print(f"[VirtualPTZ] Đã nạp profile thiết bị '{self.camera_key}'")
+            print(f"[VirtualPTZ] Đã nạp profile thiết bị '{self.camera_key}' (Pan Type: {self.pan_type})")
             return
 
         if CALIBRATION_FILE.exists():
@@ -304,8 +306,16 @@ class VirtualPTZTracker:
     def goto_angle(self, target_pan_deg: float, target_tilt_deg: float, speed: float = 0.8):
         """
         Quay camera tới góc vật lý thực tế (target_pan_deg, target_tilt_deg).
+        Tự động xử lý cơ chế Bounded Clamping hoặc Shortest Path tuỳ theo pan_type.
         """
-        v_pan, v_tilt = self.physical_angles_to_virtual(target_pan_deg, target_tilt_deg)
+        # Nếu là bounded_stops: Clamp trong dải vật lý cho phép
+        if getattr(self, "pan_type", "bounded_stops") == "bounded_stops" or not getattr(self, "allow_zero_wrap_around", False):
+            clamped_pan = max(0.0, min(self.total_pan_range_deg, target_pan_deg))
+        else:
+            clamped_pan = target_pan_deg % self.total_pan_range_deg
+
+        clamped_tilt = max(self.tilt_min_deg, min(self.tilt_max_deg, target_tilt_deg))
+        v_pan, v_tilt = self.physical_angles_to_virtual(clamped_pan, clamped_tilt)
         self.goto_virtual(v_pan, v_tilt, speed=speed)
 
     def get_status(self) -> Dict[str, Any]:

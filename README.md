@@ -32,6 +32,15 @@ Hệ thống điều khiển cơ khí, định vị không gian ảo (Virtual PT
 
 ```text
 onvif-ptz/
+├── apps/                   # Ứng dụng AI Demo độc lập
+│   └── spatial_agent/      # Demo: Active Spatial Memory & Visual Cueing Agent
+│       ├── agent.py        # LangGraph ReAct Workflow + compact_messages
+│       ├── tools.py        # LangChain Tools (Scan, Query, Slew, Telegram)
+│       ├── prompts.py      # System prompts & VLM templates
+│       ├── db.py           # SQLite storage (data/spatial_memory.sqlite3)
+│       ├── minio_client.py # Upload S3 MinIO (minio.nvlit.asia)
+│       ├── telegram_notifier.py # Gửi ảnh và alert tới Telegram (@vothanhlam1793)
+│       └── cli.py          # Interactive Terminal Runner
 ├── api/                    # FastAPI REST & WebSocket API endpoints
 │   ├── __init__.py
 │   └── routes.py
@@ -42,6 +51,7 @@ onvif-ptz/
 │   ├── virtual_ptz.py      # Bộ máy toạ độ ảo & Homing vật lý
 │   ├── coordinate.py       # Chuyển đổi Pixel -> Vector PTZ
 │   └── auto_calibration.py # Tự động đo FOV, thời gian quay và lập hồ sơ
+├── data/                   # CSDL SQLite cho Spatial Agent (spatial_memory.sqlite3)
 ├── panorama/               # Module quét và ghép ảnh toàn cảnh cầu
 │   ├── __init__.py
 │   ├── agent.py            # LangGraph điều phối quy trình quét
@@ -52,21 +62,10 @@ onvif-ptz/
 │   ├── __init__.py
 │   └── stream_relay.py
 ├── static/                 # Giao diện Web Console (StationWatch)
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
 ├── tests/                  # Bộ kiểm thử Unit Test
-│   ├── test_virtual_engine.py
-│   └── test_settings.py
-├── outputs/
-│   └── camera_profiles/    # Hồ sơ thông số cơ học & quang học từng camera
-│       ├── lc_ipc_k2e_3h3w.json
-│       └── uniarch_uho_s2e.json
-├── .env.example
-├── .gitignore
-├── requirements.txt
-├── README.md
-└── main.py                 # Entrypoint khởi chạy server
+├── cli.py                  # CLI Launcher cho Spatial Agent
+├── main.py                 # Entrypoint Web Server PTZ Core
+└── README.md
 ```
 
 ---
