@@ -59,7 +59,7 @@ LƯU Ý ĐẶC BIỆT ĐỂ CHỐNG ẢO GIÁC:
    - Máy lạnh (Air Conditioner): Khối hộp chữ nhật nằm ngang gắn sát trần nhà (Y=0), có cánh gió/đèn tín hiệu.
 """
 
-TARGET_VERIFICATION_VLM_PROMPT = """Bạn là hệ thống thẩm định thị giác đóng vòng (Closed-loop Visual Verifier) của camera PTZ.
+TARGET_VERIFICATION_VLM_PROMPT = """Bạn là hệ thống thẩm định thị giác đóng vòng (Closed-loop Visual Verifier) và tự động học đối tượng không gian của camera PTZ.
 Camera vừa lia tới góc vật lý Pan = {pan_deg}°, Tilt = {tilt_deg}° để tìm mục tiêu: "{target_label}".
 
 HÃY QUAN SÁT ẢNH THỜI GIAN THỰC VÀ TRẢ VỀ JSON DUY NHẤT:
@@ -73,15 +73,28 @@ HÃY QUAN SÁT ẢNH THỜI GIAN THỰC VÀ TRẢ VỀ JSON DUY NHẤT:
   "center_offset_y_pct": 0.0,
   "is_centered": true,
   "explanation": "Giải thích chi tiết đặc điểm đối tượng nhìn thấy trong ảnh (màu sắc, vị trí, trạng thái)",
-  "state_change": "PRESENT"
+  "state_change": "PRESENT",
+  "detected_context_objects": [
+    {{
+      "label": "Tên tiếng Anh (ví dụ: phone_charger, water_cup, laptop, chair, car_key, backpack)",
+      "label_vi": "Tên tiếng Việt chuẩn",
+      "category": "STATIC hoặc DYNAMIC",
+      "confidence": 0.90,
+      "bbox": [ymin, xmin, ymax, xmax],
+      "notes": "Mô tả vị trí tương quan hoặc đặc điểm (ví dụ: Cạnh laptop trên bàn)"
+    }}
+  ]
 }}
 ```
 
-Quy tắc tính toán BBox & Tâm hình học chuẩn xác:
-- `bbox`: Toạ độ chuẩn hoá từ 0 đến 1000 [ymin, xmin, ymax, xmax] bao quát TOÀN THỂ đối tượng (Ví dụ: Với Cửa phòng, ymin là đỉnh khung bao trên, ymax là chân cửa sát sàn; Với Mặt người, bao quát từ đỉnh đầu tới cằm).
-- Tâm BBox đối tượng: cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2.
-- `center_offset_x_pct`: Độ lệch tâm ngang của BBox so với tâm ảnh (500): (cx - 500) / 500. Giá trị từ -1.0 (lệch sang trái) đến +1.0 (lệch sang phải).
-- `center_offset_y_pct`: Độ lệch tâm dọc của BBox so với tâm ảnh (500): (cy - 500) / 500. Giá trị từ -1.0 (lệch lên trên) đến +1.0 (lệch xuống dưới).
-- `is_centered`: `true` CHỈ KHI độ lệch tuyệt đối của cả 2 trục <= 0.06 (sai số dưới 6% so với tâm hình).
-- `state_change`: `PRESENT` nếu thấy đối tượng; `MOVED` hoặc `NOT_FOUND` nếu vị trí này đã bị thay đổi hoặc trống.
+Quy tắc thẩm định và học bối cảnh (Context Learning):
+1. Thẩm định mục tiêu chính ({target_label}):
+   - `bbox`: Toạ độ chuẩn hoá [0..1000] [ymin, xmin, ymax, xmax] bao trọn mục tiêu.
+   - `center_offset_x_pct`: (cx - 500) / 500, `center_offset_y_pct`: (cy - 500) / 500.
+   - `is_centered`: `true` nếu sai số cả 2 trục <= 0.06.
+   - `state_change`: `PRESENT`, `MOVED` hoặc `NOT_FOUND`.
+2. Tự động nhận diện & cập nhật toàn bộ vật thể liên đới (`detected_context_objects`):
+   - Hãy quan sát KỸ toàn bộ khung hình và liệt kê TẤT CẢ các vật thể khác xuất hiện trong ảnh (cả đồ vật tĩnh và đồ vật di động có liên quan xung quanh).
+   - `category`: `STATIC` (cửa, máy lạnh, đèn, kệ cố định, ổ cắm gắn tường) hoặc `DYNAMIC` (người, laptop, cốc nước, điện thoại, sạc, chìa khoá, balo, ghế xoay).
+   - Đảm bảo trích xuất đầy đủ để hệ thống cập nhật vào bộ nhớ dài hạn, tránh phải quét lại từ đầu khi tìm kiếm các món đồ này sau này.
 """

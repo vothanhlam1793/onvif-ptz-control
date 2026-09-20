@@ -26,6 +26,7 @@ from apps.spatial_agent.db import (
     search_objects_in_memory,
     get_spatial_memory_summary,
     update_object_verification,
+    upsert_discovered_objects,
 )
 from apps.spatial_agent.minio_client import upload_spatial_frame, upload_verified_image, upload_file_bytes
 from apps.spatial_agent.telegram_notifier import send_telegram_message, send_telegram_photo
@@ -418,16 +419,16 @@ def slew_and_verify_target_tool(target_label: str, cell_id: str, pan_deg: float,
                 ver_result["explanation"] += f" (Đã tự động căn tâm quang học 1-Shot: Pan={opt_pan}°, Tilt={opt_tilt}°)"
                 pan_deg, tilt_deg = opt_pan, opt_tilt
 
-    # Cập nhật kết quả vào database
+    # Cập nhật trạng thái đối tượng chính
     status = ver_result.get("state_change", "PRESENT") if ver_result.get("is_found") else "NOT_FOUND"
     update_object_verification(cell_id, target_label, status, notes=ver_result.get("explanation", ""))
 
-    ver_result["live_image_url"] = verify_url
-    ver_result["local_image_path"] = local_verify_path
-    ver_result["pan_deg"] = pan_deg
-    ver_result["tilt_deg"] = tilt_deg
-
-    return json.dumps(ver_result, ensure_ascii=False, indent=2)
+    # ── TỰ ĐỘNG HỌC & CẬP NHẬT VẬT THỂ LIÊN ĐỚI (In-flight Opportunistic Learning) ──
+    context_objects = ver_result.get("detected_context_objects", [])
+    if context_objects:
+        upserted = upsert_discovered_objects(cell_id, context_objects)
+        print(f"[Spatial Memory] Đã tự động học & cập nhật {upserted} vật thể liên đới nhìn thấy tại ô {cell_id} vào SQLite.")
+        ver_result["in_flight_learned_objects_count"] = upserted
 
     ver_result["live_image_url"] = verify_url
     ver_result["local_image_path"] = local_verify_path

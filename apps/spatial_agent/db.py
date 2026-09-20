@@ -225,6 +225,59 @@ def update_object_verification(cell_id: str, label: str, status: str, notes: str
         conn.commit()
 
 
+def upsert_discovered_objects(cell_id: str, objects: List[Dict[str, Any]]) -> int:
+    """
+    Tự động ghi nhận/cập nhật danh sách vật thể quan sát được trong khung hình (In-flight Learning).
+    - Nếu vật thể đã tồn tại trong cell_id (trùng label): cập nhật bbox, status=PRESENT, notes, last_verified_at.
+    - Nếu là vật thể mới: chèn thêm bản ghi vào SQLite.
+    Trả về số lượng đối tượng mới hoặc cập nhật thành công.
+    """
+    if not objects or not cell_id:
+        return 0
+
+    now = time.time()
+    upserted_count = 0
+
+    with get_connection() as conn:
+        for obj in objects:
+            lbl = obj.get("label", "").lower().strip()
+            if not lbl:
+                continue
+
+            lbl_vi = obj.get("label_vi", "") or lbl
+            category = obj.get("category", "DYNAMIC").upper()
+            if category not in ("STATIC", "DYNAMIC"):
+                category = "DYNAMIC"
+            confidence = float(obj.get("confidence", 0.9))
+            bbox = json.dumps(obj.get("bbox", []))
+            notes = obj.get("notes", "")
+
+            # Kiểm tra xem vật thể đã có trong cell_id này chưa
+            existing = conn.execute(
+                "SELECT id FROM spatial_objects WHERE cell_id = ? AND lower(label) = lower(?)",
+                (cell_id, lbl)
+            ).fetchone()
+
+            if existing:
+                conn.execute("""
+                    UPDATE spatial_objects
+                    SET label_vi = ?, category = ?, confidence = ?, bbox_json = ?, notes = ?, status = 'PRESENT', last_verified_at = ?
+                    WHERE id = ?
+                """, (lbl_vi, category, confidence, bbox, notes, now, existing["id"]))
+            else:
+                conn.execute("""
+                    INSERT INTO spatial_objects (
+                        cell_id, label, label_vi, category, confidence, bbox_json, notes, status, last_verified_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PRESENT', ?)
+                """, (cell_id, lbl, lbl_vi, category, confidence, bbox, notes, now))
+
+            upserted_count += 1
+
+        conn.commit()
+
+    return upserted_count
+
+
 def get_spatial_memory_summary() -> Dict[str, Any]:
     """Tạo bản tóm tắt text ngắn gọn về toàn bộ không gian cho LLM reasoning."""
     with get_connection() as conn:
