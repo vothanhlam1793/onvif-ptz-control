@@ -49,7 +49,7 @@ _client: Optional[OnvifClient] = None
 _tracker: Optional[VirtualPTZTracker] = None
 _rtsp_url: str = ""
 PTZ_SPEED: float = float(os.getenv("PTZ_SPEED", "1.0"))
-PTZ_SETTLE_TIME: float = float(os.getenv("PTZ_SETTLE_TIME", "0.2"))
+PTZ_SETTLE_TIME: float = float(os.getenv("PTZ_SETTLE_TIME", "0.45"))
 
 
 def set_ptz_hardware(client: OnvifClient, tracker: VirtualPTZTracker, rtsp_url: str):
@@ -445,10 +445,10 @@ def slew_and_verify_target_tool(
 
     print(f"\n[PTZ Slew] Đang điều khiển camera lia tới ô {cell_id}: Pan = {pan_deg:.1f}°, Tilt = {tilt_deg:.1f}° (Speed={PTZ_SPEED}, VLM Verify={verify_with_vlm})...")
     _tracker.goto_angle(pan_deg, tilt_deg, speed=PTZ_SPEED)
-    time.sleep(PTZ_SETTLE_TIME)  # Chờ ổn định cơ khí
+    time.sleep(PTZ_SETTLE_TIME)  # Chờ ổn định cơ khí chống rung nhòe ảnh
 
-    # Chụp ảnh snapshot thời gian thực
-    fb = snapshot(_rtsp_url, width=1280, height=720)
+    # Chụp ảnh snapshot Full HD 1080p sắc nét
+    fb = snapshot(_rtsp_url, width=1920, height=1080)
     if not fb:
         return f"Lỗi: Không lấy được snapshot từ camera tại góc Pan={pan_deg}, Tilt={tilt_deg}."
 
@@ -536,8 +536,8 @@ def slew_and_verify_target_tool(
             _tracker.goto_angle(opt_pan, opt_tilt, speed=PTZ_SPEED)
             time.sleep(PTZ_SETTLE_TIME)
 
-            # Chụp lại snapshot mới đã căn tâm tuyệt đối
-            fb_centered = snapshot(_rtsp_url, width=1280, height=720)
+            # Chụp lại snapshot mới đã căn tâm tuyệt đối Full HD 1080p
+            fb_centered = snapshot(_rtsp_url, width=1920, height=1080)
             if fb_centered:
                 with open(local_verify_path, "wb") as f:
                     f.write(fb_centered)

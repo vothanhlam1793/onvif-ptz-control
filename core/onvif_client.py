@@ -6,6 +6,7 @@ Hỗ trợ: WS-Security Digest Auth, session keep-alive, dynamic capability disc
 import hashlib
 import base64
 import os
+import time
 import datetime
 import re
 import xml.etree.ElementTree as ET

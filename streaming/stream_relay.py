@@ -95,19 +95,37 @@ class StreamRelay:
 
 def snapshot(rtsp_url: str, width: int = 1920, height: int = 1080) -> Optional[bytes]:
     """
-    Chụp 1 frame đơn từ RTSP stream với độ bền cao và tự động retry (chống drop frame khi camera vừa quay xong).
+    Chụp 1 frame đơn sắc nét Full HD 1080p từ RTSP stream:
+    - Bắt đúng Keyframe I-Frame sắc nét, chống motion blur và vỡ hạt.
     """
     cmd = [
         "ffmpeg",
         "-nostats",
         "-loglevel", "quiet",
         "-rtsp_transport", "tcp",
-        "-fflags", "nobuffer+discardcorrupt",
-        "-flags", "low_delay",
-        "-analyzeduration", "1000000",
-        "-probesize", "1000000",
         "-i", rtsp_url,
         "-vf", f"scale={width}:{height}",
+        "-vframes", "1",
+        "-q:v", "1",
+        "-f", "image2",
+        "-vcodec", "mjpeg",
+        "pipe:1",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=6)
+        if result.returncode == 0 and result.stdout:
+            return result.stdout
+    except Exception:
+        pass
+
+    # Fallback retry lần 2 nếu lần đầu bị nghẽn mạng
+    cmd_fallback = [
+        "ffmpeg",
+        "-nostats",
+        "-loglevel", "quiet",
+        "-rtsp_transport", "tcp",
+        "-i", rtsp_url,
+        "-vf", "scale=1920:1080",
         "-vframes", "1",
         "-q:v", "2",
         "-f", "image2",
@@ -115,28 +133,7 @@ def snapshot(rtsp_url: str, width: int = 1920, height: int = 1080) -> Optional[b
         "pipe:1",
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, timeout=5)
-        if result.returncode == 0 and result.stdout:
-            return result.stdout
-    except Exception:
-        pass
-
-    # Fallback retry lần 2 với kích thước 1280x720 nhanh
-    cmd_fallback = [
-        "ffmpeg",
-        "-nostats",
-        "-loglevel", "quiet",
-        "-rtsp_transport", "tcp",
-        "-i", rtsp_url,
-        "-vf", "scale=1280:720",
-        "-vframes", "1",
-        "-q:v", "3",
-        "-f", "image2",
-        "-vcodec", "mjpeg",
-        "pipe:1",
-    ]
-    try:
-        result2 = subprocess.run(cmd_fallback, capture_output=True, timeout=4)
+        result2 = subprocess.run(cmd_fallback, capture_output=True, timeout=5)
         if result2.returncode == 0 and result2.stdout:
             return result2.stdout
     except Exception:
