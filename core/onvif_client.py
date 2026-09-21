@@ -230,21 +230,26 @@ class OnvifClient:
     # PTZ Commands
     # ──────────────────────────────────────────────
 
-    def continuous_move(self, pan: float, tilt: float, zoom: float = 0.0):
+    def continuous_move(self, pan: float, tilt: float, zoom: float = 0.0,
+                        timeout_s: float = 30.0):
         """
         Quay liên tục. pan/tilt/zoom: [-1.0, 1.0].
-        Dừng bằng stop().
+        Dừng bằng stop(). Một số firmware Imou/LC bỏ qua lệnh không có Timeout,
+        nên luôn gửi timeout như một failsafe nếu client không gọi stop().
         """
+        zoom_xml = ""
+        if abs(zoom) > 0.0001:
+            zoom_xml = f'''\n    <Zoom xmlns="http://www.onvif.org/ver10/schema"
+      space="http://www.onvif.org/ver10/tptz/ZoomSpaces/VelocityGenericSpace"
+      x="{zoom:.4f}"/>'''
         body = f"""<ContinuousMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">
   <ProfileToken>{self.profile_token}</ProfileToken>
   <Velocity>
     <PanTilt xmlns="http://www.onvif.org/ver10/schema"
       space="http://www.onvif.org/ver10/tptz/PanTiltSpaces/VelocityGenericSpace"
-      x="{pan:.4f}" y="{tilt:.4f}"/>
-    <Zoom xmlns="http://www.onvif.org/ver10/schema"
-      space="http://www.onvif.org/ver10/tptz/ZoomSpaces/VelocityGenericSpace"
-      x="{zoom:.4f}"/>
+      x="{pan:.4f}" y="{tilt:.4f}"/>{zoom_xml}
   </Velocity>
+  <Timeout>PT{max(0.1, timeout_s):.1f}S</Timeout>
 </ContinuousMove>"""
         self._post(self.ptz_url, body)
 

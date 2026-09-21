@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from core.onvif_client import OnvifClient
 from core.virtual_ptz import VirtualPTZTracker
 from streaming.stream_relay import snapshot
+from tools.onvif import PtzTool, PtzToolError
 from apps.spatial_agent.db import (
     save_spatial_cell,
     save_spatial_objects,
@@ -58,6 +59,75 @@ def set_ptz_hardware(client: OnvifClient, tracker: VirtualPTZTracker, rtsp_url: 
     _client = client
     _tracker = tracker
     _rtsp_url = rtsp_url
+
+
+def _manual_ptz_tool() -> PtzTool:
+    if not _client or not _rtsp_url:
+        raise PtzToolError("PTZ_NOT_LOGGED_IN")
+    return PtzTool(client=_client, rtsp_url=_rtsp_url)
+
+
+def _move_vector(direction: str, speed: float) -> dict:
+    vectors = {
+        "left": (-1.0, 0.0, 0.0), "right": (1.0, 0.0, 0.0),
+        "up": (0.0, 1.0, 0.0), "down": (0.0, -1.0, 0.0),
+        "up-left": (-1.0, 1.0, 0.0), "up-right": (1.0, 1.0, 0.0),
+        "down-left": (-1.0, -1.0, 0.0), "down-right": (1.0, -1.0, 0.0),
+        "zoom-in": (0.0, 0.0, 1.0), "zoom-out": (0.0, 0.0, -1.0),
+    }
+    pan, tilt, zoom = vectors[direction]
+    return {"pan": pan * speed, "tilt": tilt * speed, "zoom": zoom * speed}
+
+
+@tool
+def camera_status_tool() -> str:
+    """Return the current ONVIF/PTZ connection status for the active camera."""
+    try:
+        tool = _manual_ptz_tool()
+        return json.dumps({"ok": True, **tool.probe()}, ensure_ascii=False)
+    except PtzToolError as exc:
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
+@tool
+def camera_move_tool(direction: str, speed: float = 0.3, duration_s: float = 0.5) -> str:
+    """Move the camera one timed nudge. direction is left/right/up/down, diagonal, zoom-in, or zoom-out. speed is 0.05-1.0 and duration_s is 0.1-2.0. Do not use this for absolute coordinates."""
+    try:
+        vector = _move_vector(direction, speed)
+        _manual_ptz_tool().nudge(direction, speed, duration_s)
+        return json.dumps({"ok": True, "direction": direction, "speed": speed, "duration_s": duration_s, "vector": vector}, ensure_ascii=False)
+    except (PtzToolError, KeyError) as exc:
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
+@tool
+def camera_stop_tool() -> str:
+    """Immediately stop pan, tilt, and zoom on the selected camera."""
+    try:
+        _manual_ptz_tool().stop()
+        return json.dumps({"ok": True, "action": "stop"}, ensure_ascii=False)
+    except PtzToolError as exc:
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
+@tool
+def camera_snapshot_tool() -> str:
+    """Capture a fresh RTSP snapshot from the selected camera and return its byte count."""
+    try:
+        image = _manual_ptz_tool().take_snapshot()
+        return json.dumps({"ok": True, "snapshot_bytes": len(image)}, ensure_ascii=False)
+    except PtzToolError as exc:
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
+@tool
+def camera_motion_check_tool(direction: str, speed: float = 0.3, duration_s: float = 0.5) -> str:
+    """Move the camera one timed nudge and verify image change. This physically moves the camera."""
+    try:
+        result = _manual_ptz_tool().probe_motion(direction, speed, duration_s)
+        return json.dumps({"ok": True, **result}, ensure_ascii=False)
+    except PtzToolError as exc:
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
 
 def _get_vlm() -> ChatOpenAI:
@@ -665,4 +735,10 @@ def get_spatial_agent_tools() -> list:
         calibrate_camera_hardware_tool,
         send_telegram_alert_tool,
         get_camera_status_tool,
+        camera_status_tool,
+        camera_move_tool,
+        camera_stop_tool,
+        camera_snapshot_tool,
+        camera_motion_check_tool,
+        query_spatial_memory_tool,
     ]
