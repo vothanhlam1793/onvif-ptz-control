@@ -140,6 +140,7 @@ class PTZService:
             s["virtual_pan"] = v_stat["pan"]
             s["virtual_tilt"] = v_stat["tilt"]
             s["is_homed"] = v_stat["is_homed"]
+            s["mechanical_calibration_confirmed"] = v_stat["mechanical_calibration_confirmed"]
         return s
 
     # ──────────────────────────────────────────────

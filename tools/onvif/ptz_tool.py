@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 
 from core.onvif_client import OnvifClient
-from streaming.stream_relay import snapshot
+from streaming.stream_relay import snapshot, get_stream_worker, RTSPStreamWorker
 
 
 class PtzToolError(RuntimeError):
@@ -55,6 +55,8 @@ class PtzTool:
         self.client = client
         self.rtsp_url = rtsp_url
         self.info: dict = {}
+        self.last_stop_time: float = 0.0
+        self.worker: Optional[RTSPStreamWorker] = None
 
     @classmethod
     def from_environment(cls) -> "PtzTool":
@@ -69,6 +71,11 @@ class PtzTool:
         try:
             self.info = self.client.discover()
             self.rtsp_url = self.rtsp_url or self.client.get_stream_uri()
+            if self.rtsp_url:
+                try:
+                    self.worker = get_stream_worker(self.rtsp_url)
+                except Exception:
+                    pass
             return self.info
         except Exception as exc:
             raise PtzToolError(f"PTZ_CONNECT_FAILED: {exc}") from exc
@@ -106,6 +113,7 @@ class PtzTool:
         self.ensure_connected()
         try:
             self.client.stop(pan_tilt=True, zoom=True)
+            self.last_stop_time = time.time()
         except Exception as exc:
             raise PtzToolError(f"PTZ_STOP_FAILED: {exc}") from exc
 
@@ -127,8 +135,29 @@ class PtzTool:
         except Exception as exc:
             raise PtzToolError(f"PTZ_RELATIVE_MOVE_FAILED: {exc}") from exc
 
-    def take_snapshot(self, width: int = 1280, height: int = 720) -> bytes:
+    def take_snapshot(self, width: int = 1280, height: int = 720, wait_settle_s: float = 0.0) -> bytes:
+        """
+        Lấy snapshot từ camera:
+        - Nếu wait_settle_s > 0: Chờ đúng khoảng thời gian settle kể từ lần stop gần nhất,
+          và đảm bảo frame lấy ra là frame sinh ra SAU mốc dừng đó (chống rung & chống stale frame).
+        - Sử dụng stream nền liên tục để triệt tiêu độ trễ handshake RTSP.
+        """
         self.ensure_connected()
+        if wait_settle_s > 0.0 and self.worker and self.last_stop_time > 0.0:
+            target_ts = self.last_stop_time + wait_settle_s
+            remaining = target_ts - time.time()
+            if remaining > 0.0:
+                time.sleep(remaining)
+            frame = self.worker.get_settled_frame(min_timestamp=target_ts, timeout_s=2.0)
+            if frame:
+                return frame
+
+        # Nếu không cần settle hoặc fallback
+        if self.worker:
+            frame, _ = self.worker.get_latest_frame()
+            if frame:
+                return frame
+
         frame = snapshot(self.rtsp_url, width=width, height=height)
         if not frame:
             raise PtzToolError("PTZ_SNAPSHOT_FAILED")
@@ -137,7 +166,7 @@ class PtzTool:
     def probe_motion(self, direction: str, speed: float = 0.3, duration_s: float = 1.0) -> dict:
         before = self.take_snapshot(640, 360)
         self.nudge(direction, speed=speed, duration_s=duration_s)
-        time.sleep(0.5)
+        time.sleep(1.2)
         after = self.take_snapshot(640, 360)
         before_img = cv2.imdecode(np.frombuffer(before, np.uint8), cv2.IMREAD_GRAYSCALE)
         after_img = cv2.imdecode(np.frombuffer(after, np.uint8), cv2.IMREAD_GRAYSCALE)

@@ -34,10 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 def create_agent_model(temperature: float = 0.2) -> ChatOpenAI:
-    """Create ChatOpenAI model configured from .env (Gemini 3.7 / 2.5 Flash via 9Router)."""
-    base_url = os.getenv("NINEROUTER_BASE_URL", "https://9router.camerangochoang.com/v1")
-    api_key = os.getenv("NINEROUTER_API_KEY", "")
-    model = os.getenv("VLM_MODEL", "ag/gemini-3.7-flash-high")
+    """Create the LangGraph chat/reasoning model from its dedicated provider config."""
+    base_url = os.getenv("CHAT_BASE_URL", "https://9router.camerangochoang.com/v1")
+    api_key = os.getenv("CHAT_API_KEY", "")
+    model = os.getenv("CHAT_MODEL", "ag/gemini-3.7-flash-high")
     return ChatOpenAI(
         base_url=base_url,
         api_key=api_key,

@@ -25,9 +25,15 @@ from streaming.stream_relay import snapshot
 PROFILES_DIR = Path(__file__).parent.parent / "outputs" / "camera_profiles"
 PROFILES_DIR.mkdir(parents=True, exist_ok=True)
 
-NINEROUTER_BASE_URL = os.getenv("NINEROUTER_BASE_URL", "https://9router.camerangochoang.com/v1")
-NINEROUTER_API_KEY  = os.getenv("NINEROUTER_API_KEY", "sk-1aa6a2183c3f40e1-6zg43d-fcff8a05")
-VLM_MODEL           = os.getenv("VLM_MODEL", "ag/gemini-3.7-flash-high")
+
+def _get_vlm(max_tokens: int) -> ChatOpenAI:
+    """Read the vision provider at request time so saved settings apply immediately."""
+    return ChatOpenAI(
+        model=os.getenv("VLM_MODEL", "ag/gemini-3.7-flash-high"),
+        base_url=os.getenv("VLM_BASE_URL", "https://9router.camerangochoang.com/v1"),
+        api_key=os.getenv("VLM_API_KEY", ""),
+        max_tokens=max_tokens,
+    )
 
 
 def get_profile_path(camera_key: str) -> Path:
@@ -47,13 +53,56 @@ def load_camera_profile(camera_key: str) -> Optional[Dict[str, Any]]:
 
 
 def save_camera_profile(camera_key: str, profile_data: Dict[str, Any]) -> Path:
-    """Lưu profile cấu hình."""
+    """Atomically save a profile so interruption cannot corrupt the last good file."""
     path = get_profile_path(camera_key)
+    path.parent.mkdir(parents=True, exist_ok=True)
     profile_data["updated_at"] = time.time()
-    with open(path, "w", encoding="utf-8") as f:
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with open(temporary, "w", encoding="utf-8") as f:
         json.dump(profile_data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    temporary.replace(path)
     print(f"[AutoCalibration] Đã lưu profile thành công: {path}")
     return path
+
+
+def migrate_legacy_camera_profile(client: OnvifClient) -> Optional[Path]:
+    """Copy a matching model-only profile to the physical device key."""
+    camera_key = getattr(client, "camera_key", "")
+    legacy_key = getattr(client, "legacy_camera_key", "")
+    if not camera_key or not legacy_key or camera_key == legacy_key:
+        return None
+    if get_profile_path(camera_key).exists():
+        return get_profile_path(camera_key)
+
+    profile = load_camera_profile(legacy_key)
+    if not profile:
+        return None
+    info = profile.get("camera_identity") or profile.get("device_info", {})
+    serial_matches = bool(client.serial_number and info.get("serial_number") == client.serial_number)
+    mac_matches = bool(
+        client.mac_address
+        and str(info.get("mac_address", "")).replace(":", "").replace("-", "").lower()
+        == client.mac_address.replace(":", "").replace("-", "").lower()
+    )
+    if not serial_matches and not mac_matches:
+        return None
+
+    migrated = dict(profile)
+    migrated["schema_version"] = max(2, int(migrated.get("schema_version", 1)))
+    migrated["camera_key"] = camera_key
+    migrated["camera_identity"] = {
+        "manufacturer": client.manufacturer,
+        "model": client.model,
+        "serial_number": client.serial_number,
+        "mac_address": client.mac_address,
+        "firmware_version": client.firmware_version,
+        "hardware_id": client.hardware_id,
+    }
+    migrated["migrated_from_camera_key"] = legacy_key
+    return save_camera_profile(camera_key, migrated)
 
 
 def _encode_bgr(img: np.ndarray, max_dim: int = 1024) -> str:
@@ -124,7 +173,7 @@ class AutoCalibrationEngine:
 Trả về JSON:
 {"single_frame_vfov_deg": <float>, "single_frame_hfov_deg": <float>, "total_tilt_range_deg": <float>, "tilt_min_deg": <float>, "tilt_max_deg": <float>, "lens_focal_length_mm": <float>}"""
 
-        llm = ChatOpenAI(model=VLM_MODEL, base_url=NINEROUTER_BASE_URL, api_key=NINEROUTER_API_KEY, max_tokens=400)
+        llm = _get_vlm(max_tokens=400)
         msg = HumanMessage(content=[
             {"type": "text", "text": prompt},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{_encode_bgr(img_b)}"}},
@@ -181,7 +230,7 @@ Chọn mức Tilt nào giữ đường chân trời / tầm mắt ở trung tâm
 Trả về JSON:
 {"optimal_horizon_tilt_val": <float: ví dụ -0.80>, "optimal_horizon_tilt_deg": <float: ví dụ 4.0>, "reason": "<lý do chọn>"}"""
 
-        llm = ChatOpenAI(model=VLM_MODEL, base_url=NINEROUTER_BASE_URL, api_key=NINEROUTER_API_KEY, max_tokens=300)
+        llm = _get_vlm(max_tokens=300)
         msg = HumanMessage(content=[
             {"type": "text", "text": prompt},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{_encode_bgr(samples[0][1])}"}},

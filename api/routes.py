@@ -9,7 +9,7 @@ import json
 import asyncio
 import threading
 from pathlib import Path
-from typing import Optional, List
+from typing import Literal, Optional, List
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, Response
@@ -275,32 +275,38 @@ def get_calibration_profile():
     from core.auto_calibration import load_camera_profile
     key = getattr(onvif_client, "camera_key", "")
     prof = load_camera_profile(key)
+    mechanical_confirmed = (
+        prof is not None
+        and prof.get("mechanical_calibration", {}).get("status") == "CONFIRMED"
+    )
     return {
         "camera_key": key,
-        "is_calibrated": prof is not None,
+        "has_profile": prof is not None,
+        "is_calibrated": mechanical_confirmed,
+        "mechanical_calibration_confirmed": mechanical_confirmed,
         "profile": prof,
     }
 
 
 @router.post("/ptz/calibration/run")
 def run_camera_calibration(force: bool = False):
-    """Kích hoạt chạy quy trình hiệu chuẩn 3 bước tự động."""
-    from core.auto_calibration import AutoCalibrationEngine
-    if not onvif_client:
-        raise HTTPException(503, "Camera client not connected")
+    """Xác nhận bốn chốt cơ khí trước khi cho phép định vị PTZ tuyệt đối."""
+    if not ptz_service or not ptz_service.virtual_tracker:
+        raise HTTPException(503, "Virtual tracker not initialized")
     try:
-        engine = AutoCalibrationEngine(onvif_client, rtsp_url_main)
-        prof = engine.get_or_calibrate(force=force)
-        if ptz_service and ptz_service.virtual_tracker:
-            ptz_service.virtual_tracker.load_calibration()
-        return {"ok": True, "profile": prof}
+        result = ptz_service.virtual_tracker.calibrate_mechanical_endstops()
+        if not result.get("ok"):
+            raise HTTPException(409, result)
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(500, str(e))
 
 
 @router.post("/ptz/virtual/home")
 def virtual_home(speed: float = 0.8):
-    """Quy trình Homing cho Virtual PTZ Tracker."""
+    """Đưa camera về mốc tạm thời bằng thời lượng profile; không xác nhận chốt cơ khí."""
     if not ptz_service or not ptz_service.virtual_tracker:
         raise HTTPException(503, "Virtual tracker not initialized")
     try:
@@ -539,6 +545,7 @@ class CameraTestSyncRequest(BaseModel):
 
 
 class LLMTestRequest(BaseModel):
+    provider: Literal["chat", "vlm"]
     base_url: str
     api_key: str
     model: str
@@ -551,8 +558,11 @@ class SettingsUpdateRequest(BaseModel):
     camera_pass: Optional[str] = None
     stream_width: int = 1280
     stream_height: int = 720
-    ninerouter_base_url: str
-    ninerouter_api_key: Optional[str] = None
+    chat_base_url: str
+    chat_api_key: Optional[str] = None
+    chat_model: str = "ag/gemini-3.7-flash-high"
+    vlm_base_url: str
+    vlm_api_key: Optional[str] = None
     vlm_model: str
 
 
@@ -565,12 +575,19 @@ def get_system_settings():
     camera_pass = os.getenv("CAMERA_PASS", "")
     stream_width = int(os.getenv("STREAM_WIDTH", "1280"))
     stream_height = int(os.getenv("STREAM_HEIGHT", "720"))
-    ninerouter_base_url = os.getenv("NINEROUTER_BASE_URL", "https://9router.camerangochoang.com/v1")
-    ninerouter_api_key = os.getenv("NINEROUTER_API_KEY", "")
+    chat_base_url = os.getenv("CHAT_BASE_URL", "https://9router.camerangochoang.com/v1")
+    chat_api_key = os.getenv("CHAT_API_KEY", "")
+    chat_model = os.getenv("CHAT_MODEL", "ag/gemini-3.7-flash-high")
+    vlm_base_url = os.getenv("VLM_BASE_URL", "https://9router.camerangochoang.com/v1")
+    vlm_api_key = os.getenv("VLM_API_KEY", "")
     vlm_model = os.getenv("VLM_MODEL", "ag/gemini-3.7-flash-high")
 
     # Mask key & pass
-    masked_key = (ninerouter_api_key[:6] + "..." + ninerouter_api_key[-4:]) if len(ninerouter_api_key) > 10 else "********"
+    def mask_key(value: str) -> str:
+        return value[:6] + "..." + value[-4:] if len(value) > 10 else "********"
+
+    masked_chat_key = mask_key(chat_api_key)
+    masked_vlm_key = mask_key(vlm_api_key)
     masked_pass = "********" if camera_pass else ""
 
     device_info = {}
@@ -590,8 +607,11 @@ def get_system_settings():
         "camera_pass_masked": masked_pass,
         "stream_width": stream_width,
         "stream_height": stream_height,
-        "ninerouter_base_url": ninerouter_base_url,
-        "ninerouter_api_key_masked": masked_key,
+        "chat_base_url": chat_base_url,
+        "chat_api_key_masked": masked_chat_key,
+        "chat_model": chat_model,
+        "vlm_base_url": vlm_base_url,
+        "vlm_api_key_masked": masked_vlm_key,
         "vlm_model": vlm_model,
         "device_info": device_info,
         "rtsp_url": rtsp_url_main,
@@ -630,15 +650,15 @@ def camera_test_sync(req: CameraTestSyncRequest):
 
 @router.post("/settings/test_llm")
 def settings_test_llm(req: LLMTestRequest):
-    """Gửi prompt kiểm tra tới LLM / 9Router."""
+    """Gửi prompt kiểm tra tới provider Chat hoặc VLM đã chọn."""
     from langchain_openai import ChatOpenAI
     from langchain_core.messages import HumanMessage
     t0 = time.time()
     try:
         api_key = req.api_key
-        # Nếu truyền masked key thì fallback lấy từ .env
-        if api_key.startswith("sk-") and "..." in api_key:
-            api_key = os.getenv("NINEROUTER_API_KEY", "")
+        # UI only returns a masked key; retain the selected provider's saved key.
+        if "..." in api_key or api_key == "********":
+            api_key = os.getenv(f"{req.provider.upper()}_API_KEY", "")
 
         llm = ChatOpenAI(
             base_url=req.base_url,
@@ -654,6 +674,7 @@ def settings_test_llm(req: LLMTestRequest):
             "ok": True,
             "latency_ms": elapsed,
             "reply": resp.content.strip(),
+            "provider": req.provider,
             "model": req.model,
         }
     except Exception as e:
@@ -709,7 +730,8 @@ def settings_save(req: SettingsUpdateRequest):
     
     # Giữ nguyên pass/key nếu người dùng không đổi
     cam_pass = req.camera_pass if req.camera_pass and req.camera_pass != "********" else os.getenv("CAMERA_PASS", "")
-    llm_key = req.ninerouter_api_key if req.ninerouter_api_key and "..." not in req.ninerouter_api_key and req.ninerouter_api_key != "********" else os.getenv("NINEROUTER_API_KEY", "")
+    chat_key = req.chat_api_key if req.chat_api_key and "..." not in req.chat_api_key and req.chat_api_key != "********" else os.getenv("CHAT_API_KEY", "")
+    vlm_key = req.vlm_api_key if req.vlm_api_key and "..." not in req.vlm_api_key and req.vlm_api_key != "********" else os.getenv("VLM_API_KEY", "")
 
     # Kiểm tra xem có thay đổi camera không
     old_host = os.getenv("CAMERA_HOST", "")
@@ -735,8 +757,11 @@ def settings_save(req: SettingsUpdateRequest):
     os.environ["CAMERA_PASS"] = cam_pass
     os.environ["STREAM_WIDTH"] = str(req.stream_width)
     os.environ["STREAM_HEIGHT"] = str(req.stream_height)
-    os.environ["NINEROUTER_BASE_URL"] = req.ninerouter_base_url
-    os.environ["NINEROUTER_API_KEY"] = llm_key
+    os.environ["CHAT_BASE_URL"] = req.chat_base_url
+    os.environ["CHAT_API_KEY"] = chat_key
+    os.environ["CHAT_MODEL"] = req.chat_model
+    os.environ["VLM_BASE_URL"] = req.vlm_base_url
+    os.environ["VLM_API_KEY"] = vlm_key
     os.environ["VLM_MODEL"] = req.vlm_model
 
     # Ghi file .env
@@ -750,9 +775,14 @@ CAMERA_PASS={cam_pass}
 STREAM_WIDTH={req.stream_width}
 STREAM_HEIGHT={req.stream_height}
 
-# VLM / 9Router Config
-NINEROUTER_BASE_URL={req.ninerouter_base_url}
-NINEROUTER_API_KEY={llm_key}
+# Chat Agent Provider
+CHAT_BASE_URL={req.chat_base_url}
+CHAT_API_KEY={chat_key}
+CHAT_MODEL={req.chat_model}
+
+# Vision Analysis Provider
+VLM_BASE_URL={req.vlm_base_url}
+VLM_API_KEY={vlm_key}
 VLM_MODEL={req.vlm_model}
 """
     try:

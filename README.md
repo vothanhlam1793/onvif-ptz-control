@@ -101,9 +101,14 @@ CAMERA_PASS=your_password_here
 STREAM_WIDTH=1280
 STREAM_HEIGHT=720
 
-# VLM / 9Router Config
-NINEROUTER_BASE_URL=https://9router.camerangochoang.com/v1
-NINEROUTER_API_KEY=your_api_key_here
+# Chat Agent Provider (LangGraph reasoning and tool calling)
+CHAT_BASE_URL=https://9router.camerangochoang.com/v1
+CHAT_API_KEY=your_chat_api_key_here
+CHAT_MODEL=ag/gemini-3.7-flash-high
+
+# Vision Provider (image analysis, calibration, panorama)
+VLM_BASE_URL=https://9router.camerangochoang.com/v1
+VLM_API_KEY=your_vlm_api_key_here
 VLM_MODEL=ag/gemini-3.7-flash-high
 ```
 
@@ -171,4 +176,3 @@ $$\begin{bmatrix} u_{zoom} \\ v_{zoom} \\ 1 \end{bmatrix} \sim \mathbf{H}_{wide 
 - **Ứng dụng:**
   - **Slew-to-Cue 2 Chiều:** Phát hiện đối tượng/người khả nghi trên bản đồ Panorama toàn cảnh $\rightarrow$ Tính vector ma trận $\rightarrow$ Quay camera và Zoom cận cảnh $Z$ vào mục tiêu với độ nét cao.
   - **Auto Re-mapping:** Chiếu ngược các Bounding Box nhận diện từ tầng Zoom sắc nét về toạ độ neo của bản đồ toàn cảnh gốc.
-

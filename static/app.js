@@ -473,7 +473,9 @@ function connectWebSocket() {
           badgeStatusText.textContent = "Camera đang quay";
         } else {
           badgeStatus.className = "badge good";
-          badgeStatusText.textContent = data.ptz.is_homed ? "Virtual PTZ Đã chuẩn hoá" : "PTZ Sẵn sàng";
+          badgeStatusText.textContent = data.ptz.mechanical_calibration_confirmed
+            ? "PTZ Đã xác nhận chốt cơ khí"
+            : (data.ptz.is_homed ? "Home tạm thời, chưa xác nhận chốt" : "PTZ Sẵn sàng");
         }
       }
 
@@ -514,27 +516,31 @@ async function loadCameraProfile() {
   const profBadge = document.getElementById("prof-badge-status");
   const step1Desc = document.getElementById("pano-step1-desc");
 
-  if (data.is_calibrated && data.profile) {
+  if (data.profile) {
     const dev = data.profile.device_info || {};
     const pan = data.profile.pan || {};
     const tilt = data.profile.tilt || {};
     profTitle.textContent = `${dev.manufacturer || 'ONVIF'} ${dev.model || ''} (S/N: ${dev.serial_number || 'N/A'})`;
-    profBadge.className = "badge good";
-    profBadge.textContent = "Profile Sẵn sàng (0s overhead)";
+    profBadge.className = data.mechanical_calibration_confirmed ? "badge good" : "badge warn";
+    profBadge.textContent = data.mechanical_calibration_confirmed
+      ? "4 chốt cơ khí đã xác nhận"
+      : "Profile cũ, chưa xác nhận chốt";
     if (step1Desc) {
-      step1Desc.textContent = `Đã nạp profile: Pan ${pan.total_pan_range_deg || 360}°, ${pan.optimal_pan_steps || 6} góc, Tilt ${tilt.optimal_horizon_tilt_val || -0.8}`;
+      step1Desc.textContent = data.mechanical_calibration_confirmed
+        ? `Đã xác nhận: Pan ${pan.total_pan_range_deg || 360}°, ${pan.optimal_pan_steps || 6} góc, Tilt ${tilt.optimal_horizon_tilt_val || -0.8}`
+        : "Cần xác nhận Pan trái/phải và Tilt dưới/trên trước khi định vị tuyệt đối.";
     }
   } else {
     profTitle.textContent = data.camera_key ? `Thiết bị: ${data.camera_key} (Chưa hiệu chuẩn)` : "Chưa có profile";
     profBadge.className = "badge warn";
-    profBadge.textContent = "Cần hiệu chuẩn 3 bước";
+    profBadge.textContent = "Cần xác nhận 4 chốt cơ khí";
   }
 }
 
 const btnRecalibrate = document.getElementById("btn-recalibrate");
 if (btnRecalibrate) {
   btnRecalibrate.addEventListener("click", async () => {
-    if (confirm("Chạy lại toàn bộ chu trình hiệu chuẩn 3 bước tự động (Tilt, Horizon, Pan 360°)? Camera sẽ tự động xoay trong ~20 giây.")) {
+    if (confirm("Xác nhận Pan trái/phải và Tilt dưới/trên? Camera sẽ quay đủ bốn biên trong khoảng 1 phút.")) {
       btnRecalibrate.disabled = true;
       btnRecalibrate.textContent = "⚙ Đang hiệu chuẩn...";
       try {
@@ -547,7 +553,7 @@ if (btnRecalibrate) {
         alert("Lỗi hiệu chuẩn: " + e);
       } finally {
         btnRecalibrate.disabled = false;
-        btnRecalibrate.textContent = "⚙ Hiệu chuẩn lại 3 bước";
+        btnRecalibrate.textContent = "⚙ Xác nhận 4 chốt cơ khí";
       }
     }
   });
@@ -566,9 +572,12 @@ async function loadSettings() {
   if (document.getElementById("cfg-cam-user")) document.getElementById("cfg-cam-user").value = data.camera_user || "admin";
   if (document.getElementById("cfg-stream-w")) document.getElementById("cfg-stream-w").value = data.stream_width || 1280;
   if (document.getElementById("cfg-stream-h")) document.getElementById("cfg-stream-h").value = data.stream_height || 720;
-  if (document.getElementById("cfg-llm-url")) document.getElementById("cfg-llm-url").value = data.ninerouter_base_url || "";
-  if (document.getElementById("cfg-llm-key")) document.getElementById("cfg-llm-key").value = data.ninerouter_api_key_masked || "";
-  if (document.getElementById("cfg-llm-model")) document.getElementById("cfg-llm-model").value = data.vlm_model || "ag/gemini-3.7-flash-high";
+  if (document.getElementById("cfg-chat-url")) document.getElementById("cfg-chat-url").value = data.chat_base_url || "";
+  if (document.getElementById("cfg-chat-key")) document.getElementById("cfg-chat-key").value = data.chat_api_key_masked || "";
+  if (document.getElementById("cfg-chat-model")) document.getElementById("cfg-chat-model").value = data.chat_model || "ag/gemini-3.7-flash-high";
+  if (document.getElementById("cfg-vlm-url")) document.getElementById("cfg-vlm-url").value = data.vlm_base_url || "";
+  if (document.getElementById("cfg-vlm-key")) document.getElementById("cfg-vlm-key").value = data.vlm_api_key_masked || "";
+  if (document.getElementById("cfg-vlm-model")) document.getElementById("cfg-vlm-model").value = data.vlm_model || "ag/gemini-3.7-flash-high";
   if (document.getElementById("cfg-current-rtsp")) document.getElementById("cfg-current-rtsp").value = data.rtsp_url || "";
 
   // Cập nhật Live View RTSP Link
@@ -663,58 +672,65 @@ if (btnSyncCam) {
   });
 }
 
-// 2. Test LLM Connection
-const btnTestLLM = document.getElementById("btn-test-llm");
-const llmTestSpinner = document.getElementById("llm-test-spinner");
-const llmTestBox = document.getElementById("llm-test-box");
-const llmTestHeader = document.getElementById("llm-test-header");
-const llmTestDetails = document.getElementById("llm-test-details");
-const btnToggleKey = document.getElementById("btn-toggle-llm-key");
-const inputLLMKey = document.getElementById("cfg-llm-key");
+// 2. Test independent Chat and VLM providers
+const aiTestSpinner = document.getElementById("ai-test-spinner");
+const aiTestBox = document.getElementById("ai-test-box");
+const aiTestHeader = document.getElementById("ai-test-header");
+const aiTestDetails = document.getElementById("ai-test-details");
 
-if (btnToggleKey && inputLLMKey) {
-  btnToggleKey.addEventListener("click", () => {
-    inputLLMKey.type = inputLLMKey.type === "password" ? "text" : "password";
-  });
+function setupKeyToggle(buttonId, inputId) {
+  const button = document.getElementById(buttonId);
+  const input = document.getElementById(inputId);
+  if (button && input) {
+    button.addEventListener("click", () => {
+      input.type = input.type === "password" ? "text" : "password";
+    });
+  }
 }
 
-if (btnTestLLM) {
-  btnTestLLM.addEventListener("click", async () => {
-    const base_url = document.getElementById("cfg-llm-url").value.trim();
-    const api_key = document.getElementById("cfg-llm-key").value.trim();
-    const model = document.getElementById("cfg-llm-model").value.trim();
+setupKeyToggle("btn-toggle-chat-key", "cfg-chat-key");
+setupKeyToggle("btn-toggle-vlm-key", "cfg-vlm-key");
 
-    btnTestLLM.disabled = true;
-    llmTestSpinner.style.display = "inline";
-    llmTestBox.style.display = "none";
+function setupProviderTest(provider, buttonId) {
+  const button = document.getElementById(buttonId);
+  if (!button) return;
+
+  button.addEventListener("click", async () => {
+    const base_url = document.getElementById(`cfg-${provider}-url`).value.trim();
+    const api_key = document.getElementById(`cfg-${provider}-key`).value.trim();
+    const model = document.getElementById(`cfg-${provider}-model`).value.trim();
+    const label = provider === "chat" ? "Chat Agent" : "VLM";
+
+    button.disabled = true;
+    aiTestSpinner.style.display = "inline";
+    aiTestBox.style.display = "none";
 
     try {
-      const res = await post("/settings/test_llm", { base_url, api_key, model });
-      llmTestBox.style.display = "block";
+      const res = await post("/settings/test_llm", { provider, base_url, api_key, model });
+      aiTestBox.style.display = "block";
       if (res && res.ok) {
-        llmTestBox.className = "sync-result-box good";
-        llmTestHeader.textContent = `✓ Phản hồi từ AI Model (${res.latency_ms} ms)`;
-        llmTestDetails.innerHTML = `
-          <b>Model:</b> ${res.model}<br>
-          <b>Phản hồi:</b> <code>${res.reply}</code><br>
-          <b>Trạng thái:</b> Sẵn sàng cho phân tích hình ảnh và VLM Panorama
-        `;
+        aiTestBox.className = "sync-result-box good";
+        aiTestHeader.textContent = `✓ ${label} phản hồi (${res.latency_ms} ms)`;
+        aiTestDetails.innerHTML = `<b>Model:</b> ${res.model}<br><b>Phản hồi:</b> <code>${res.reply}</code>`;
       } else {
-        llmTestBox.className = "sync-result-box bad";
-        llmTestHeader.textContent = "✗ Kiểm tra AI thất bại";
-        llmTestDetails.textContent = res ? res.error : "Không thể kết nối đến LLM server";
+        aiTestBox.className = "sync-result-box bad";
+        aiTestHeader.textContent = `✗ Kiểm tra ${label} thất bại`;
+        aiTestDetails.textContent = res ? res.error : "Không thể kết nối tới provider";
       }
     } catch (e) {
-      llmTestBox.style.display = "block";
-      llmTestBox.className = "sync-result-box bad";
-      llmTestHeader.textContent = "✗ Lỗi xử lý";
-      llmTestDetails.textContent = String(e);
+      aiTestBox.style.display = "block";
+      aiTestBox.className = "sync-result-box bad";
+      aiTestHeader.textContent = "✗ Lỗi xử lý";
+      aiTestDetails.textContent = String(e);
     } finally {
-      btnTestLLM.disabled = false;
-      llmTestSpinner.style.display = "none";
+      button.disabled = false;
+      aiTestSpinner.style.display = "none";
     }
   });
 }
+
+setupProviderTest("chat", "btn-test-chat");
+setupProviderTest("vlm", "btn-test-vlm");
 
 // 3. Save Settings
 const btnSaveSettings = document.getElementById("btn-save-settings");
@@ -733,9 +749,12 @@ if (btnSaveSettings) {
       camera_pass: document.getElementById("cfg-cam-pass").value,
       stream_width: parseInt(document.getElementById("cfg-stream-w").value) || 1280,
       stream_height: parseInt(document.getElementById("cfg-stream-h").value) || 720,
-      ninerouter_base_url: document.getElementById("cfg-llm-url").value.trim(),
-      ninerouter_api_key: document.getElementById("cfg-llm-key").value.trim(),
-      vlm_model: document.getElementById("cfg-llm-model").value.trim(),
+      chat_base_url: document.getElementById("cfg-chat-url").value.trim(),
+      chat_api_key: document.getElementById("cfg-chat-key").value.trim(),
+      chat_model: document.getElementById("cfg-chat-model").value.trim(),
+      vlm_base_url: document.getElementById("cfg-vlm-url").value.trim(),
+      vlm_api_key: document.getElementById("cfg-vlm-key").value.trim(),
+      vlm_model: document.getElementById("cfg-vlm-model").value.trim(),
     };
 
     try {

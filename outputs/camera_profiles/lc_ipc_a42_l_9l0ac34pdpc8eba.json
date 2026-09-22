@@ -1,0 +1,630 @@
+{
+  "camera_key": "lc_ipc_a42_l_9l0ac34pdpc8eba",
+  "device_info": {
+    "manufacturer": "LC",
+    "model": "IPC-A42-L",
+    "serial_number": "9L0AC34PDPC8EBA",
+    "mac_address": "906a94da032d",
+    "firmware_version": "2.810.0000000.1.R 2025-12-05",
+    "hardware_id": "1.10"
+  },
+  "optical": {
+    "hfov_deg": 59.48,
+    "vfov_deg": 35.097,
+    "lens_focal_length_mm": 3.6,
+    "intrinsic_calibration": {
+      "status": "CONFIRMED",
+      "method": "checkerboard_9x6_opencv",
+      "image_size": [
+        1280,
+        720
+      ],
+      "intrinsic_matrix": [
+        [
+          1120.230563823133,
+          0.0,
+          656.699899183647
+        ],
+        [
+          0.0,
+          1138.4029463747484,
+          438.371823497495
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "distortion_coefficients": [
+        -0.38072479881135246,
+        0.42691002809162554,
+        -0.008729904254689499,
+        -0.003170913233906333,
+        -1.742942455276698
+      ],
+      "accepted_views": 11,
+      "rms_reprojection_error_px": 0.3247,
+      "median_view_error_px": 0.3169,
+      "max_view_error_px": 0.3819,
+      "hfov_uncertainty_deg_mad": 1.228,
+      "vfov_uncertainty_deg_mad": 0.983,
+      "updated_at": 1790060834
+    }
+  },
+  "tilt": {
+    "tilt_min_deg": -10.0,
+    "tilt_max_deg": 80.0,
+    "total_tilt_range_deg": 90.0,
+    "full_tilt_time_sec": 0.75,
+    "optimal_horizon_tilt_val": -0.55,
+    "optimal_horizon_tilt_deg": 0.0,
+    "optimal_vertical_frames": 4,
+    "reference_speed": 0.4,
+    "mechanical_endstops": {
+      "bottom": {
+        "confirmed": true,
+        "status": "CONFIRMED_ASSISTED",
+        "reason": "no_reverse_recovery",
+        "axis": "tilt",
+        "direction": -1.0,
+        "samples": [
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 28,
+            "global_motion_px": 0.0,
+            "coherence": 0.0,
+            "global_vector_px": [
+              0.0,
+              0.0
+            ],
+            "inlier_ratio": 0.824,
+            "coverage": [
+              0.084,
+              0.036
+            ],
+            "occupied_grid_cells": 1,
+            "axis_alignment": 0.0,
+            "moved": false
+          },
+          {
+            "reliable": false,
+            "reason": "too_few_tracked_features"
+          },
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 25,
+            "global_motion_px": 0.0,
+            "coherence": 0.0,
+            "global_vector_px": [
+              0.0,
+              0.0
+            ],
+            "inlier_ratio": 0.463,
+            "coverage": [
+              0.164,
+              0.817
+            ],
+            "occupied_grid_cells": 2,
+            "axis_alignment": 0.0,
+            "moved": false
+          },
+          {
+            "reliable": true,
+            "method": "lk_ransac",
+            "tracked_features": 80,
+            "global_motion_px": 0.021,
+            "coherence": 0.338,
+            "global_vector_px": [
+              -0.009,
+              -0.019
+            ],
+            "inlier_ratio": 0.988,
+            "coverage": [
+              0.933,
+              0.983
+            ],
+            "occupied_grid_cells": 6,
+            "forward_backward_error_px": 0.005,
+            "axis_alignment": 0.679,
+            "moved": false
+          }
+        ],
+        "reverse": {
+          "reliable": false,
+          "reason": "too_few_tracked_features"
+        },
+        "assisted": true
+      },
+      "top": {
+        "confirmed": true,
+        "status": "CONFIRMED_ASSISTED",
+        "reason": "too_few_tracked_features",
+        "moving_duration_s": 0.0,
+        "uncertain_duration_s": 0.75,
+        "traversal_duration_s": 0.75,
+        "samples": [
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 27,
+            "global_motion_px": 0.0,
+            "coherence": 0.0,
+            "global_vector_px": [
+              0.0,
+              0.0
+            ],
+            "inlier_ratio": 1.0,
+            "coverage": [
+              0.183,
+              0.819
+            ],
+            "occupied_grid_cells": 2,
+            "axis_alignment": 0.0,
+            "moved": false
+          },
+          {
+            "reliable": false,
+            "reason": "too_few_tracked_features"
+          },
+          {
+            "reliable": false,
+            "reason": "too_few_tracked_features"
+          },
+          {
+            "reliable": false,
+            "reason": "too_few_tracked_features"
+          }
+        ],
+        "reverse": {
+          "reliable": false,
+          "reason": "too_few_tracked_features"
+        },
+        "assisted": true
+      }
+    }
+  },
+  "pan": {
+    "pan_type": "bounded_stops",
+    "total_pan_range_deg": 365.0,
+    "full_pan_time_sec": 4.0,
+    "has_mechanical_stops": true,
+    "allow_zero_wrap_around": false,
+    "is_360_closed_loop": true,
+    "is_360_continuous": false,
+    "optimal_pan_steps": 10,
+    "pan_step_coords": [
+      -1.0,
+      -0.78,
+      -0.56,
+      -0.33,
+      -0.11,
+      0.11,
+      0.33,
+      0.56,
+      0.78,
+      1.0
+    ],
+    "reference_speed": 0.4,
+    "mechanical_endstops": {
+      "left": {
+        "confirmed": true,
+        "status": "CONFIRMED_ASSISTED",
+        "reason": "no_reverse_recovery",
+        "axis": "pan",
+        "direction": -1.0,
+        "samples": [
+          {
+            "reliable": true,
+            "method": "lk_ransac",
+            "tracked_features": 32,
+            "global_motion_px": 0.01,
+            "coherence": 0.469,
+            "global_vector_px": [
+              0.001,
+              -0.01
+            ],
+            "inlier_ratio": 1.0,
+            "coverage": [
+              0.203,
+              0.864
+            ],
+            "occupied_grid_cells": 2,
+            "forward_backward_error_px": 0.001,
+            "axis_alignment": 0.091,
+            "moved": false
+          },
+          {
+            "reliable": true,
+            "method": "lk_ransac",
+            "tracked_features": 33,
+            "global_motion_px": 0.002,
+            "coherence": 0.0,
+            "global_vector_px": [
+              0.002,
+              -0.001
+            ],
+            "inlier_ratio": 1.0,
+            "coverage": [
+              0.203,
+              0.867
+            ],
+            "occupied_grid_cells": 2,
+            "forward_backward_error_px": 0.0,
+            "axis_alignment": 0.667,
+            "moved": false
+          },
+          {
+            "reliable": true,
+            "method": "lk_ransac",
+            "tracked_features": 34,
+            "global_motion_px": 0.007,
+            "coherence": 0.0,
+            "global_vector_px": [
+              -0.007,
+              -0.002
+            ],
+            "inlier_ratio": 1.0,
+            "coverage": [
+              0.203,
+              0.867
+            ],
+            "occupied_grid_cells": 2,
+            "forward_backward_error_px": 0.001,
+            "axis_alignment": 0.778,
+            "moved": false
+          }
+        ],
+        "reverse": {
+          "reliable": false,
+          "reason": "too_few_tracked_features"
+        },
+        "assisted": true
+      },
+      "right": {
+        "confirmed": true,
+        "status": "CONFIRMED_ASSISTED",
+        "reason": "too_few_tracked_features",
+        "moving_duration_s": 3.0,
+        "uncertain_duration_s": 1.0,
+        "traversal_duration_s": 4.0,
+        "samples": [
+          {
+            "reliable": false,
+            "reason": "too_few_tracked_features"
+          },
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 40,
+            "global_motion_px": 147.62,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -147.0,
+              13.512
+            ],
+            "inlier_ratio": 0.426,
+            "coverage": [
+              0.117,
+              0.355
+            ],
+            "occupied_grid_cells": 2,
+            "axis_alignment": 0.916,
+            "moved": true
+          },
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 57,
+            "global_motion_px": 158.277,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -158.257,
+              2.488
+            ],
+            "inlier_ratio": 0.377,
+            "coverage": [
+              0.338,
+              0.372
+            ],
+            "occupied_grid_cells": 3,
+            "axis_alignment": 0.985,
+            "moved": true
+          },
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 68,
+            "global_motion_px": 147.948,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -147.72,
+              -8.211
+            ],
+            "inlier_ratio": 0.469,
+            "coverage": [
+              0.394,
+              0.419
+            ],
+            "occupied_grid_cells": 3,
+            "axis_alignment": 0.947,
+            "moved": true
+          },
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 30,
+            "global_motion_px": 156.062,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -155.52,
+              -13.0
+            ],
+            "inlier_ratio": 0.261,
+            "coverage": [
+              0.201,
+              0.193
+            ],
+            "occupied_grid_cells": 1,
+            "axis_alignment": 0.923,
+            "moved": true
+          },
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 36,
+            "global_motion_px": 126.247,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -126.144,
+              5.092
+            ],
+            "inlier_ratio": 0.396,
+            "coverage": [
+              0.325,
+              0.578
+            ],
+            "occupied_grid_cells": 3,
+            "axis_alignment": 0.961,
+            "moved": true
+          },
+          {
+            "reliable": true,
+            "method": "lk_ransac",
+            "tracked_features": 42,
+            "global_motion_px": 103.637,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -101.28,
+              -21.975
+            ],
+            "inlier_ratio": 0.506,
+            "coverage": [
+              0.241,
+              0.161
+            ],
+            "occupied_grid_cells": 2,
+            "forward_backward_error_px": 0.201,
+            "axis_alignment": 0.822,
+            "moved": true
+          },
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 75,
+            "global_motion_px": 137.269,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -136.512,
+              -14.4
+            ],
+            "inlier_ratio": 0.51,
+            "coverage": [
+              0.483,
+              0.391
+            ],
+            "occupied_grid_cells": 3,
+            "axis_alignment": 0.905,
+            "moved": true
+          },
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 73,
+            "global_motion_px": 114.199,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -113.76,
+              10.0
+            ],
+            "inlier_ratio": 0.451,
+            "coverage": [
+              0.435,
+              0.695
+            ],
+            "occupied_grid_cells": 2,
+            "axis_alignment": 0.919,
+            "moved": true
+          },
+          {
+            "reliable": true,
+            "method": "lk_ransac",
+            "tracked_features": 81,
+            "global_motion_px": 133.668,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -133.507,
+              6.542
+            ],
+            "inlier_ratio": 0.802,
+            "coverage": [
+              0.172,
+              0.539
+            ],
+            "occupied_grid_cells": 3,
+            "forward_backward_error_px": 0.141,
+            "axis_alignment": 0.953,
+            "moved": true
+          },
+          {
+            "reliable": true,
+            "method": "lk_ransac",
+            "tracked_features": 107,
+            "global_motion_px": 111.141,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -110.736,
+              -9.472
+            ],
+            "inlier_ratio": 0.748,
+            "coverage": [
+              0.253,
+              0.517
+            ],
+            "occupied_grid_cells": 2,
+            "forward_backward_error_px": 0.09,
+            "axis_alignment": 0.921,
+            "moved": true
+          },
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 69,
+            "global_motion_px": 118.335,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -117.504,
+              -14.0
+            ],
+            "inlier_ratio": 0.5,
+            "coverage": [
+              0.316,
+              0.544
+            ],
+            "occupied_grid_cells": 3,
+            "axis_alignment": 0.894,
+            "moved": true
+          },
+          {
+            "reliable": true,
+            "method": "lk_ransac",
+            "tracked_features": 30,
+            "global_motion_px": 0.023,
+            "coherence": 0.5,
+            "global_vector_px": [
+              -0.021,
+              0.01
+            ],
+            "inlier_ratio": 0.789,
+            "coverage": [
+              0.184,
+              0.867
+            ],
+            "occupied_grid_cells": 2,
+            "forward_backward_error_px": 0.005,
+            "axis_alignment": 0.677,
+            "moved": false
+          },
+          {
+            "reliable": true,
+            "method": "orb_ransac",
+            "tracked_features": 45,
+            "global_motion_px": 130.74,
+            "coherence": 1.0,
+            "global_vector_px": [
+              -130.637,
+              5.184
+            ],
+            "inlier_ratio": 0.421,
+            "coverage": [
+              0.237,
+              0.324
+            ],
+            "occupied_grid_cells": 2,
+            "axis_alignment": 0.962,
+            "moved": true
+          },
+          {
+            "reliable": false,
+            "reason": "too_few_tracked_features"
+          },
+          {
+            "reliable": false,
+            "reason": "too_few_tracked_features"
+          },
+          {
+            "reliable": false,
+            "reason": "too_few_tracked_features"
+          }
+        ],
+        "reverse": {
+          "reliable": true,
+          "method": "orb_ransac",
+          "tracked_features": 35,
+          "global_motion_px": 0.0,
+          "coherence": 0.0,
+          "global_vector_px": [
+            0.0,
+            0.0
+          ],
+          "inlier_ratio": 0.795,
+          "coverage": [
+            0.191,
+            0.822
+          ],
+          "occupied_grid_cells": 2,
+          "axis_alignment": 0.0,
+          "moved": false
+        },
+        "assisted": true
+      }
+    }
+  },
+  "ptz_actuator": {
+    "status": "MEASURED",
+    "command": {
+      "speed": 0.15,
+      "duration_s": 0.05,
+      "snapshot_settle_s": 1.2
+    },
+    "minimum_pulse_deg": {
+      "left": 3.478,
+      "right": 5.806,
+      "up": 6.432,
+      "down": 6.454
+    },
+    "note": "Minimum observed motor response; individual pulses vary because the camera has no encoder.",
+    "updated_at": 1790060834
+  },
+  "formulas": {
+    "formula_horizon_tilt": "tilt_deg = tilt_min_deg + ((tilt_val - (-1.0)) / 2.0) * (tilt_max_deg - tilt_min_deg)",
+    "formula_pan_steps": "N_pan = ceil(total_pan_range_deg / (HFOV * (1.0 - overlap_ratio)))",
+    "formula_tilt_rows": "N_tilt = ceil(total_tilt_range_deg / (VFOV * (1.0 - overlap_ratio)))"
+  },
+  "calibration_duration_sec": 78.6,
+  "updated_at": 1790095162.2034793,
+  "schema_version": 2,
+  "camera_identity": {
+    "manufacturer": "LC",
+    "model": "IPC-A42-L",
+    "serial_number": "9L0AC34PDPC8EBA",
+    "mac_address": "906a94da032d",
+    "firmware_version": "2.810.0000000.1.R 2025-12-05",
+    "hardware_id": "1.10"
+  },
+  "migrated_from_camera_key": "lc_ipc_a42_l",
+  "mechanical_calibration": {
+    "status": "CONFIRMED",
+    "method": "global_optical_flow_with_reverse_recovery",
+    "sequence": [
+      "pan_left",
+      "pan_right",
+      "tilt_bottom",
+      "tilt_top"
+    ],
+    "snapshot_settle_s": 1.2,
+    "updated_at": 1790095162.2033935
+  }
+}

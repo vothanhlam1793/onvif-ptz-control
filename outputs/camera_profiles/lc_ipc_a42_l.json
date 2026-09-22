@@ -1,0 +1,97 @@
+{
+  "camera_key": "lc_ipc_a42_l",
+  "device_info": {
+    "manufacturer": "LC",
+    "model": "IPC-A42-L",
+    "serial_number": "9L0AC34PDPC8EBA",
+    "mac_address": "906a94da032d",
+    "firmware_version": "2.810.0000000.1.R 2025-12-05",
+    "hardware_id": "1.10"
+  },
+  "optical": {
+    "hfov_deg": 59.48,
+    "vfov_deg": 35.097,
+    "lens_focal_length_mm": 3.6,
+    "intrinsic_calibration": {
+      "status": "CONFIRMED",
+      "method": "checkerboard_9x6_opencv",
+      "image_size": [
+        1280,
+        720
+      ],
+      "intrinsic_matrix": [
+        [1120.230563823133, 0.0, 656.699899183647],
+        [0.0, 1138.4029463747484, 438.371823497495],
+        [0.0, 0.0, 1.0]
+      ],
+      "distortion_coefficients": [
+        -0.38072479881135246,
+        0.42691002809162554,
+        -0.008729904254689499,
+        -0.003170913233906333,
+        -1.742942455276698
+      ],
+      "accepted_views": 11,
+      "rms_reprojection_error_px": 0.3247,
+      "median_view_error_px": 0.3169,
+      "max_view_error_px": 0.3819,
+      "hfov_uncertainty_deg_mad": 1.228,
+      "vfov_uncertainty_deg_mad": 0.983,
+      "updated_at": 1790060834
+    }
+  },
+  "tilt": {
+    "tilt_min_deg": -10.0,
+    "tilt_max_deg": 80.0,
+    "total_tilt_range_deg": 90.0,
+    "full_tilt_time_sec": 2.4,
+    "optimal_horizon_tilt_val": -0.55,
+    "optimal_horizon_tilt_deg": 0.0,
+    "optimal_vertical_frames": 4
+  },
+  "pan": {
+    "pan_type": "bounded_stops",
+    "total_pan_range_deg": 365.0,
+    "full_pan_time_sec": 5.2,
+    "has_mechanical_stops": true,
+    "allow_zero_wrap_around": false,
+    "is_360_closed_loop": true,
+    "is_360_continuous": false,
+    "optimal_pan_steps": 10,
+    "pan_step_coords": [
+      -1.0,
+      -0.78,
+      -0.56,
+      -0.33,
+      -0.11,
+      0.11,
+      0.33,
+      0.56,
+      0.78,
+      1.0
+    ]
+  },
+  "ptz_actuator": {
+    "status": "MEASURED",
+    "command": {
+      "speed": 0.15,
+      "duration_s": 0.05,
+      "snapshot_settle_s": 1.2
+    },
+    "minimum_pulse_deg": {
+      "left": 3.478,
+      "right": 5.806,
+      "up": 6.432,
+      "down": 6.454
+    },
+    "note": "Minimum observed motor response; individual pulses vary because the camera has no encoder.",
+    "updated_at": 1790060834
+  },
+  "formulas": {
+    "formula_horizon_tilt": "tilt_deg = tilt_min_deg + ((tilt_val - (-1.0)) / 2.0) * (tilt_max_deg - tilt_min_deg)",
+    "formula_pan_steps": "N_pan = ceil(total_pan_range_deg / (HFOV * (1.0 - overlap_ratio)))",
+    "formula_tilt_rows": "N_tilt = ceil(total_tilt_range_deg / (VFOV * (1.0 - overlap_ratio)))"
+  },
+  "calibration_duration_sec": 78.6,
+  "updated_at": 1790060834
+}

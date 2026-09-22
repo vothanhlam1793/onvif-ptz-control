@@ -10,15 +10,12 @@ Model: ag/gemini-3.7-flash-high via 9Router
 
 import base64
 import json
-import os
 import time
 import threading
 from typing import Annotated, Any, Optional, TypedDict
 import numpy as np
 from dotenv import load_dotenv
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
@@ -28,11 +25,6 @@ from panorama.sweeper import sweep_and_capture, wait_idle
 from panorama.stitcher import stitch, save_results
 
 load_dotenv()
-
-# ── 9Router config (Gemini 3.7 Flash High)
-NINEROUTER_BASE_URL = os.getenv("NINEROUTER_BASE_URL", "https://9router.camerangochoang.com/v1")
-NINEROUTER_API_KEY  = os.getenv("NINEROUTER_API_KEY", "sk-1aa6a2183c3f40e1-6zg43d-fcff8a05")
-VLM_MODEL           = os.getenv("VLM_MODEL", "ag/gemini-3.7-flash-high")
 
 DEFAULT_NUM_STEPS = 8
 MIN_STEPS = 4

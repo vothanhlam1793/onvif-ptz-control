@@ -232,7 +232,7 @@
           </div>
           <div style="display:flex;gap:10px;align-items:center;">
             <span class="badge good" id="prof-badge-status">Profile Ready</span>
-            <button class="secondary-btn" id="btn-recalibrate" style="padding:4px 10px;font-size:11px;">⚙ Hiệu chuẩn lại 3 bước</button>
+            <button class="secondary-btn" id="btn-recalibrate" style="padding:4px 10px;font-size:11px;">⚙ Xác nhận 4 chốt cơ khí</button>
           </div>
         </div>
 
@@ -383,43 +383,63 @@
           </div>
         </div>
 
-        <!-- AI LLM / VLM Config Card -->
+        <!-- AI Provider Config Card -->
         <div class="settings-card panel">
           <div class="panel-head">
-            <strong>Cấu hình AI LLM / VLM (9Router / OpenAI)</strong>
-            <span>Thiết lập trí tuệ nhân tạo phân tích hình ảnh</span>
+            <strong>Cấu hình Chat Agent và VLM</strong>
+            <span>Mỗi tác vụ dùng provider, API key và model riêng</span>
           </div>
           <div class="settings-body">
             <div class="form-group" style="margin-bottom:14px;">
-              <label for="cfg-llm-url">Base URL (API Endpoint):</label>
-              <input type="text" id="cfg-llm-url" placeholder="https://9router.camerangochoang.com/v1" value="https://9router.camerangochoang.com/v1">
+              <label for="cfg-chat-url">Chat Agent Base URL:</label>
+              <input type="text" id="cfg-chat-url" placeholder="https://api.openai.com/v1">
             </div>
 
             <div class="form-group" style="margin-bottom:14px;">
-              <label for="cfg-llm-key">API Key:</label>
+              <label for="cfg-chat-key">Chat Agent API Key:</label>
               <div style="display:flex;gap:8px;">
-                <input type="password" id="cfg-llm-key" placeholder="sk-..." style="flex:1;">
-                <button class="secondary-btn" id="btn-toggle-llm-key" type="button" style="padding:0 12px;">👁</button>
+                <input type="password" id="cfg-chat-key" placeholder="sk-..." style="flex:1;">
+                <button class="secondary-btn" id="btn-toggle-chat-key" type="button" style="padding:0 12px;">👁</button>
               </div>
             </div>
 
             <div class="form-group" style="margin-bottom:14px;">
-              <label for="cfg-llm-model">Model AI (VLM / LLM):</label>
-              <input type="text" id="cfg-llm-model" placeholder="ag/gemini-3.7-flash-high" value="ag/gemini-3.7-flash-high">
-              <small style="color:#64748b;font-size:12px;margin-top:4px;display:block;">Khuyên dùng: <code>ag/gemini-3.7-flash-high</code>, <code>gpt-4o-mini</code>, <code>claude-3-7-sonnet</code></small>
+              <label for="cfg-chat-model">Chat Agent Model:</label>
+              <input type="text" id="cfg-chat-model" placeholder="gpt-4o-mini">
+            </div>
+
+            <button class="secondary-btn" id="btn-test-chat" type="button">Kiểm tra Chat Agent</button>
+
+            <div style="border-top:1px solid #e2e8f0;margin:20px 0;"></div>
+
+            <div class="form-group" style="margin-bottom:14px;">
+              <label for="cfg-vlm-url">VLM Base URL:</label>
+              <input type="text" id="cfg-vlm-url" placeholder="https://api.openai.com/v1">
+            </div>
+
+            <div class="form-group" style="margin-bottom:14px;">
+              <label for="cfg-vlm-key">VLM API Key:</label>
+              <div style="display:flex;gap:8px;">
+                <input type="password" id="cfg-vlm-key" placeholder="sk-..." style="flex:1;">
+                <button class="secondary-btn" id="btn-toggle-vlm-key" type="button" style="padding:0 12px;">👁</button>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:14px;">
+              <label for="cfg-vlm-model">VLM Model:</label>
+              <input type="text" id="cfg-vlm-model" placeholder="gpt-4o">
             </div>
 
             <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
-              <button class="primary-btn" id="btn-test-llm" style="background:#167aef;">
-                ⚡ Kiểm tra kết nối AI
+              <button class="primary-btn" id="btn-test-vlm" style="background:#167aef;">
+                Kiểm tra VLM
               </button>
-              <span id="llm-test-spinner" style="display:none;font-size:13px;color:#64748b;">Đang gửi prompt test...</span>
+              <span id="ai-test-spinner" style="display:none;font-size:13px;color:#64748b;">Đang gửi prompt test...</span>
             </div>
 
-            <!-- LLM Test Result Box -->
-            <div class="sync-result-box" id="llm-test-box" style="display:none;">
-              <div class="sync-header" id="llm-test-header">✓ AI sẵn sàng</div>
-              <div class="sync-details" id="llm-test-details"></div>
+            <div class="sync-result-box" id="ai-test-box" style="display:none;">
+              <div class="sync-header" id="ai-test-header">AI sẵn sàng</div>
+              <div class="sync-details" id="ai-test-details"></div>
             </div>
           </div>
         </div>

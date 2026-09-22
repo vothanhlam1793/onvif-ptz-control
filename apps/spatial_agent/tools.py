@@ -8,6 +8,7 @@ import logging
 import os
 import time
 import threading
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 import numpy as np
 
@@ -20,6 +21,7 @@ from core.onvif_client import OnvifClient
 from core.virtual_ptz import VirtualPTZTracker
 from streaming.stream_relay import snapshot
 from tools.onvif import PtzTool, PtzToolError
+from tools.onvif.angle_controller import RelativeAngleController
 from apps.spatial_agent.db import (
     save_spatial_cell,
     save_spatial_objects,
@@ -50,7 +52,8 @@ _client: Optional[OnvifClient] = None
 _tracker: Optional[VirtualPTZTracker] = None
 _rtsp_url: str = ""
 PTZ_SPEED: float = float(os.getenv("PTZ_SPEED", "1.0"))
-PTZ_SETTLE_TIME: float = float(os.getenv("PTZ_SETTLE_TIME", "0.45"))
+PTZ_SETTLE_TIME: float = float(os.getenv("PTZ_SETTLE_TIME", "1.2"))
+_physical_ptz_lock = threading.Lock()
 
 
 def set_ptz_hardware(client: OnvifClient, tracker: VirtualPTZTracker, rtsp_url: str):
@@ -95,6 +98,8 @@ def camera_move_tool(direction: str, speed: float = 0.3, duration_s: float = 0.5
     try:
         vector = _move_vector(direction, speed)
         _manual_ptz_tool().nudge(direction, speed, duration_s)
+        if _tracker:
+            _tracker.record_manual_nudge(direction, speed, duration_s)
         return json.dumps({"ok": True, "direction": direction, "speed": speed, "duration_s": duration_s, "vector": vector}, ensure_ascii=False)
     except (PtzToolError, KeyError) as exc:
         return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
@@ -112,10 +117,19 @@ def camera_stop_tool() -> str:
 
 @tool
 def camera_snapshot_tool() -> str:
-    """Capture a fresh RTSP snapshot from the selected camera and return its byte count."""
+    """Capture a fresh RTSP snapshot from the selected camera, save it to outputs/current_view.jpg, and return its path and byte count for VLM visual inspection."""
     try:
-        image = _manual_ptz_tool().take_snapshot()
-        return json.dumps({"ok": True, "snapshot_bytes": len(image)}, ensure_ascii=False)
+        image = _manual_ptz_tool().take_snapshot(wait_settle_s=PTZ_SETTLE_TIME)
+        out_path = Path(__file__).resolve().parents[2] / "outputs" / "current_view.jpg"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(image)
+        return json.dumps({
+            "ok": True,
+            "image_path": str(out_path),
+            "relative_path": "outputs/current_view.jpg",
+            "snapshot_bytes": len(image),
+            "timestamp": time.time(),
+        }, ensure_ascii=False)
     except PtzToolError as exc:
         return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
@@ -130,9 +144,28 @@ def camera_motion_check_tool(direction: str, speed: float = 0.3, duration_s: flo
         return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
 
+@tool
+def camera_rotate_relative_angle_tool(
+    axis: str,
+    angle_deg: float,
+    tolerance_deg: float = 2.0,
+) -> str:
+    """Rotate by a visually measured relative angle. axis is pan or tilt; positive means right/up and negative means left/down. Requires confirmed intrinsic calibration."""
+    try:
+        manual_tool = _manual_ptz_tool()
+        camera_key = getattr(_client, "camera_key", "")
+        profile_path = Path(__file__).resolve().parents[2] / "outputs" / "camera_profiles" / f"{camera_key}.json"
+        controller = RelativeAngleController.from_profile(manual_tool, profile_path)
+        with _physical_ptz_lock:
+            result = controller.rotate_relative_deg(axis, angle_deg, tolerance_deg=tolerance_deg)
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except (OSError, ValueError, RuntimeError, PtzToolError) as exc:
+        return json.dumps({"ok": False, "status": "ERROR", "error": str(exc)}, ensure_ascii=False)
+
+
 def _get_vlm() -> ChatOpenAI:
-    base_url = os.getenv("NINEROUTER_BASE_URL", "https://9router.camerangochoang.com/v1")
-    api_key = os.getenv("NINEROUTER_API_KEY", "")
+    base_url = os.getenv("VLM_BASE_URL", "https://9router.camerangochoang.com/v1")
+    api_key = os.getenv("VLM_API_KEY", "")
     model = os.getenv("VLM_MODEL", "ag/gemini-3.7-flash-high")
     return ChatOpenAI(
         base_url=base_url,
@@ -687,31 +720,31 @@ def send_telegram_alert_tool(
 
 
 # ──────────────────────────────────────────────
-# Tool 5: Hiệu Chuẩn Phần Cứng Camera (3 Bước)
+# Tool 5: Hiệu Chuẩn Chốt Cơ Khí Camera
 # ──────────────────────────────────────────────
 
 @tool
 def calibrate_camera_hardware_tool(force: bool = True) -> str:
-    """Kích hoạt chu trình Auto-Calibration 3 bước tự động đo đạc thông số phần cứng camera: đo góc nhìn quang học (HFOV/VFOV), tiêu cự ống kính (2.4/2.8/3.6mm), dải cơ khí Tilt/Pan và lưu lại hồ sơ outputs/camera_profiles/{camera_key}.json.
-    Dùng khi gắn camera mới hoặc muốn hiệu chuẩn lại các góc quay và dải cơ khí.
+    """Xác nhận bốn chốt cơ khí Pan trái/phải và Tilt dưới/trên bằng optical flow toàn cục và hỗ trợ tường trơn.
+    Tool dò chốt cơ khí và hỗ trợ tự động xác nhận khi camera chạm tường trơn kết hợp reverse recovery.
     """
     global _client, _tracker, _rtsp_url
     if not _client or not _tracker:
         return "Lỗi: Phần cứng Camera PTZ chưa được kết nối."
 
-    from core.auto_calibration import AutoCalibrationEngine
-    engine = AutoCalibrationEngine(_client, _rtsp_url)
-    prof = engine.get_or_calibrate(force=force)
-    _tracker.load_calibration()
+    result = _tracker.calibrate_mechanical_endstops(allow_assisted=True)
+    if not result.get("ok"):
+        return json.dumps({
+            "ok": False,
+            "message": "Không thể xác nhận an toàn một chốt cơ khí; profile không bị thay đổi.",
+            **result,
+        }, ensure_ascii=False, indent=2)
 
-    hfov = prof.get("optical", {}).get("hfov_deg")
-    vfov = prof.get("optical", {}).get("vfov_deg")
-    lens = prof.get("optical", {}).get("lens_focal_length_mm")
-    cols = prof.get("pan", {}).get("optimal_pan_steps")
-    rows = prof.get("tilt", {}).get("optimal_vertical_frames")
-    pan_type = prof.get("pan", {}).get("pan_type")
-
-    return f"ĐÃ HOÀN TẤT HIỆU CHUẨN PHẦN CỨNG: Lens ~{lens}mm (HFOV={hfov}°, VFOV={vfov}°). Dải quay Pan: {prof.get('pan', {}).get('total_pan_range_deg')}° ({pan_type}), Tilt: {prof.get('tilt', {}).get('total_tilt_range_deg')}°. Ma trận lưới tự động: {rows} tầng x {cols} cột = {rows*cols} ô. Hồ sơ đã lưu vào outputs/camera_profiles/{_client.camera_key}.json"
+    return json.dumps({
+        "ok": True,
+        "message": "Đã xác nhận Pan trái/phải và Tilt dưới/trên bằng chuyển động toàn cục + reverse recovery.",
+        **result,
+    }, ensure_ascii=False, indent=2)
 
 
 # ──────────────────────────────────────────────

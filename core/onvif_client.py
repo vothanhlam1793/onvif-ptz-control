@@ -8,12 +8,13 @@ import base64
 import os
 import time
 import datetime
-import re
 import xml.etree.ElementTree as ET
 import urllib.parse
 from typing import Optional
 
 import requests
+
+from core.device_identity import legacy_camera_key, physical_camera_key
 
 
 NS = {
@@ -59,6 +60,7 @@ class OnvifClient:
         self.hardware_id: str = ""
         self.mac_address: str = ""
         self.camera_key: str = ""
+        self.legacy_camera_key: str = ""
 
     # ──────────────────────────────────────────────
     # Internal helpers
@@ -159,18 +161,14 @@ class OnvifClient:
         except Exception:
             pass
 
-        # Tạo camera_key duy nhất (ưu tiên Manufacturer + Model, fallback Serial/MAC)
-        clean_mfg = re.sub(r"[^a-zA-Z0-9_]", "_", self.manufacturer.strip().lower())
-        clean_model = re.sub(r"[^a-zA-Z0-9_]", "_", self.model.strip().lower())
-        
-        if clean_mfg and clean_model:
-            self.camera_key = f"{clean_mfg}_{clean_model}"
-        elif self.serial_number:
-            self.camera_key = f"cam_{self.serial_number.lower()}"
-        elif self.mac_address:
-            self.camera_key = f"cam_{self.mac_address}"
-        else:
-            self.camera_key = f"cam_{self.host.replace('.', '_')}"
+        self.legacy_camera_key = legacy_camera_key(self.manufacturer, self.model)
+        self.camera_key = physical_camera_key(
+            self.manufacturer,
+            self.model,
+            self.serial_number,
+            self.mac_address,
+            self.host,
+        )
 
         return {
             "manufacturer": self.manufacturer,
@@ -189,6 +187,11 @@ class OnvifClient:
         """
         self.sync_time()
         self.get_device_information()
+        try:
+            from core.auto_calibration import migrate_legacy_camera_profile
+            migrate_legacy_camera_profile(self)
+        except Exception as exc:
+            print(f"[ONVIF] Profile migration skipped: {exc}")
 
         # GetCapabilities
         body = '<GetCapabilities xmlns="http://www.onvif.org/ver10/device/wsdl"><Category>All</Category></GetCapabilities>'

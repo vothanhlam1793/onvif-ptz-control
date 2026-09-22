@@ -43,6 +43,7 @@ class AgentPtzToolTests(unittest.TestCase):
     def test_registered_tools_include_legacy_and_manual_motion(self):
         names = {tool.name for tool in tools.get_spatial_agent_tools()}
         self.assertTrue({"camera_status_tool", "camera_move_tool", "camera_stop_tool", "camera_snapshot_tool", "camera_motion_check_tool"}.issubset(names))
+        self.assertNotIn("camera_rotate_relative_angle_tool", names)
         self.assertTrue({"slew_and_verify_target_tool", "scan_and_index_space_tool", "calibrate_camera_hardware_tool"}.issubset(names))
 
 
